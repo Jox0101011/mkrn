@@ -1,0 +1,88 @@
+Estrutura de src/
+
+bin/
+----
+contem arquivo fontes de binarios essenciais para
+todos os usuarios. Cada programa tem seu proprio diretorio e
+dentro dele contem arquivos C e um Makefile.
+
+
+
+sbin/
+----
+contem arquivo fontes de binarios essenciais para
+adminastraçao. Cada programa tem seu proprio diretorio e
+dentro dele contem arquivos C e um Makefile.
+
+
+
+usr.bin/
+----
+contem arquivo fontes de binarios nao-essenciais para
+todos os usuarios. Cada programa tem seu proprio diretorio e
+dentro dele contem arquivos C e um Makefile.
+
+
+
+usr.sbin/
+----
+contem arquivo fontes de binarios nao-essenciais para
+adminastraçao. Cada programa tem seu proprio diretorio e
+dentro dele contem arquivos C e um Makefile.
+
+
+
+include/
+----
+contem codigo dos headers da biblioteca C do
+sistema operacional.
+
+
+
+
+kern/
+----
+contem codigo do kernel separado por arch (amd64, ia32...).
+
+
+
+svr/ 
+----
+contem codigo dos servidores usados pelo microkernel, ex.:
+
+unix server - expoe api posixs como fork
+filesystem server - expoe um filesystem, tipo ext2
+vfs server - abstracao para filesystems
+process manager server - controla processos
+...
+
+
+
+lib/
+----
+contem codigo de bibliotecas para o sistema, ex.:
+
+libc - biblioteca C
+libm - biblioteca matematica
+libcrypt - biblioteca criptografica
+libpthread - biblioteca para threading
+libdl - biblioteca para resolucao de symbols e carregamento em runtime
+librt - biblioteca para funcoes em tempo real
+
+
+
+etc/
+----
+contem arquivos templates para configuracao
+basica do sistema, como shells, usuarios e grupos
+e alguns scripts de init.
+
+
+
+prog.mk
+---
+injeta automaticamente regras, variaveis e outras coisas,
+tirando a necessidade de escrever um makefile complexo
+para cada programa. Ex. (assumindo que voce esta em mkrn/src):
+
+make -I $PWD -C bin/foo
