@@ -1,5 +1,9 @@
 /*
  * subr_log.c - logging padronizado do kernel
+ *
+ * klog/kwarn/kerror so diferem no rotulo antes do timestamp; toda a
+ * montagem de "[ rotulo | timestamp ] facilidade: " passa por
+ * klog_prefix() pra nao repetir a mesma coisa tres vezes.
  */
 
 #include <stdarg.h>
@@ -10,36 +14,46 @@
 #include "sys/log.h"
 #include "sys/prf.h"
 
-void
-klog(const char *fac, const char *fmt, ...)
+static void
+klog_prefix(const char *level, const char *fac)
 {
 	unsigned long sec, usec;
-	va_list ap;
 
 	md_uptime(&sec, &usec);
-	kprintf("[%5lu.%06lu] ", sec, usec);
+
+	if (level != NULL)
+		kprintf("[%s | %5lu.%06lu] ", level, sec, usec);
+	else
+		kprintf("[%5lu.%06lu] ", sec, usec);
 
 	if (fac != NULL)
 		kprintf("%s: ", fac);
+}
+
+void
+vklog(const char *fac, const char *fmt, va_list ap)
+{
+	klog_prefix(NULL, fac);
+	kvprintf(fmt, ap);
+	kputc('\n');
+}
+
+void
+klog(const char *fac, const char *fmt, ...)
+{
+	va_list ap;
 
 	va_start(ap, fmt);
-	kvprintf(fmt, ap);
+	vklog(fac, fmt, ap);
 	va_end(ap);
-
-	kputc('\n');
 }
 
 void
 kwarn(const char *fac, const char *fmt, ...)
 {
-	unsigned long sec, usec;
 	va_list ap;
 
-	md_uptime(&sec, &usec);
-	kprintf("[WARN | %5lu.%06lu] ", sec, usec);
-
-	if (fac != NULL)
-		kprintf("%s: ", fac);
+	klog_prefix("WARN", fac);
 
 	va_start(ap, fmt);
 	kvprintf(fmt, ap);
@@ -50,39 +64,14 @@ kwarn(const char *fac, const char *fmt, ...)
 
 void
 kerror(const char *fac, const char *fmt, ...)
-{	
-    unsigned long sec, usec;
-	va_list ap;
-
-	md_uptime(&sec, &usec);
-	kprintf("[ERROR | %5lu.%06lu] ", sec, usec);
-
-	if (fac != NULL)
-		kprintf("%s: ", fac);
-
-	va_start(ap, fmt);
-	kvprintf(fmt, ap);
-	va_end(ap);
-
-	kputc('\n');
-} 
-
-void
-panic(const char *fmt, ...)
 {
-	unsigned long sec, usec;
 	va_list ap;
 
-	md_uptime(&sec, &usec);
-	kprintf("[PANIC | %5lu.%06lu] ", sec, usec);
+	klog_prefix("ERROR", fac);
 
 	va_start(ap, fmt);
 	kvprintf(fmt, ap);
 	va_end(ap);
 
 	kputc('\n');
-
-	__asm__ volatile("cli");
-	for (;;)
-		__asm__ volatile("hlt");
 }

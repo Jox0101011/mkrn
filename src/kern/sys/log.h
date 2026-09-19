@@ -9,8 +9,11 @@
 #ifndef _SYS_LOG_H_
 #define _SYS_LOG_H_
 
+#include <stdarg.h>
+
 void klog(const char *fac, const char *fmt, ...);
 void kwarn(const char *fac, const char *fmt, ...);
 void kerror(const char *fac, const char *fmt, ...);
-void panic(const char *fmt, ...);
+void vklog(const char *fac, const char *fmt, va_list ap);
+
 #endif /* !_SYS_LOG_H_ */

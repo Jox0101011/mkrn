@@ -22,6 +22,21 @@ inb(uint16_t port)
 	return val;
 }
 
+static __inline void
+outw(uint16_t port, uint16_t val)
+{
+	__asm__ volatile("outw %0, %1" : : "a"(val), "Nd"(port));
+}
+
+static __inline uint16_t
+inw(uint16_t port)
+{
+	uint16_t val;
+
+	__asm__ volatile("inw %1, %0" : "=a"(val) : "Nd"(port));
+	return val;
+}
+
 static __inline uint64_t
 rdtsc(void)
 {
