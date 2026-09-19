@@ -16,8 +16,8 @@ CFLAGS=		-m32 -std=c99 -ffreestanding -fno-pie -fno-stack-protector \
 LDFLAGS=	-m elf_i386 -nostdlib -T amd64/kern.ld
 
 MISRCS=		main.c subr_log.c subr_prf.c
-MDCSRCS=	amd64/vga.c amd64/tsc.c
-MDSSRCS=	amd64/boot.S
+MDCSRCS=	amd64/vga.c amd64/tsc.c amd64/gdt.c
+MDSSRCS=	amd64/boot.S amd64/gdt_flush.S
 
 OBJS=		${MISRCS:.c=.o} ${MDCSRCS:.c=.o} ${MDSSRCS:.S=.o}
 

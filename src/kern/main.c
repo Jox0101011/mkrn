@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "amd64/include/machine/multiboot.h"
+#include "amd64/include/machine/segments.h"
 #include "sys/clock.h"
 #include "sys/cons.h"
 #include "sys/log.h"
@@ -21,9 +22,12 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 	struct multiboot_info *mbi;
 
 	vga_init();
+	gdt_init();
 	tsc_calibrate();
 
 	klog(NULL, "mkrn 0.1 (amd64/bios)");
+	klog("gdt", "%d descritores carregados (cs=0x%x ds=0x%x)",
+	    NGDT, GSEL_KCODE, GSEL_KDATA);
 
 	if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
 		klog("boot", "magic multiboot invalido: 0x%x", magic);
