@@ -66,3 +66,23 @@ kerror(const char *fac, const char *fmt, ...)
 
 	kputc('\n');
 } 
+
+void
+panic(const char *fmt, ...)
+{
+	unsigned long sec, usec;
+	va_list ap;
+
+	md_uptime(&sec, &usec);
+	kprintf("[PANIC | %5lu.%06lu] ", sec, usec);
+
+	va_start(ap, fmt);
+	kvprintf(fmt, ap);
+	va_end(ap);
+
+	kputc('\n');
+
+	__asm__ volatile("cli");
+	for (;;)
+		__asm__ volatile("hlt");
+}

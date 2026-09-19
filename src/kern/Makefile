@@ -15,7 +15,7 @@ CFLAGS=		-m32 -std=c99 -ffreestanding -fno-pie -fno-stack-protector \
 		-fno-builtin -Wall -Wextra -O2 -g -Isys -Iamd64/include
 LDFLAGS=	-m elf_i386 -nostdlib -T amd64/kern.ld
 
-MISRCS=		main.c subr_log.c subr_prf.c
+MISRCS=		main.c subr_log.c subr_prf.c subr_libkern.c reboot.c
 MDCSRCS=	amd64/vga.c amd64/tsc.c amd64/gdt.c
 MDSSRCS=	amd64/boot.S amd64/gdt_flush.S
 
