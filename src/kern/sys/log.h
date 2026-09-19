@@ -10,5 +10,7 @@
 #define _SYS_LOG_H_
 
 void klog(const char *fac, const char *fmt, ...);
+void kwarn(const char *fac, const char *fmt, ...);
+void kerror(const char *fac, const char *fmt, ...);
 
 #endif /* !_SYS_LOG_H_ */

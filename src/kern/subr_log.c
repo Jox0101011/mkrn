@@ -28,3 +28,41 @@ klog(const char *fac, const char *fmt, ...)
 
 	kputc('\n');
 }
+
+void
+kwarn(const char *fac, const char *fmt, ...)
+{
+	unsigned long sec, usec;
+	va_list ap;
+
+	md_uptime(&sec, &usec);
+	kprintf("[WARN | %5lu.%06lu] ", sec, usec);
+
+	if (fac != NULL)
+		kprintf("%s: ", fac);
+
+	va_start(ap, fmt);
+	kvprintf(fmt, ap);
+	va_end(ap);
+
+	kputc('\n');
+}
+
+void
+kerror(const char *fac, const char *fmt, ...)
+{	
+    unsigned long sec, usec;
+	va_list ap;
+
+	md_uptime(&sec, &usec);
+	kprintf("[ERROR | %5lu.%06lu] ", sec, usec);
+
+	if (fac != NULL)
+		kprintf("%s: ", fac);
+
+	va_start(ap, fmt);
+	kvprintf(fmt, ap);
+	va_end(ap);
+
+	kputc('\n');
+} 

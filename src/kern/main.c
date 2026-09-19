@@ -48,6 +48,9 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 		klog("boot", "cmdline: %s", (char *)(uintptr_t)mbi->cmdline);
 
 	klog(NULL, "main: inicializacao concluida");
+    kwarn(NULL, "main: gege");
+    kerror(NULL, "main: system is off..");
+    kwarn(NULL, "rebooting..");    
 
 idle:
 	for (;;)
