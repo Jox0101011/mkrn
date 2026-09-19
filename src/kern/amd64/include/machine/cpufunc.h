@@ -46,4 +46,14 @@ rdtsc(void)
 	return ((uint64_t)hi << 32) | lo;
 }
 
+/* endereco linear que causou o ultimo #pf */
+static __inline uint32_t
+rcr2(void)
+{
+	uint32_t val;
+
+	__asm__ volatile("mov %%cr2, %0" : "=r"(val));
+	return val;
+}
+
 #endif /* !_MACHINE_CPUFUNC_H_ */
