@@ -56,4 +56,16 @@ rcr2(void)
 	return val;
 }
 
+static __inline void
+sti(void)
+{
+	__asm__ volatile("sti");
+}
+
+static __inline void
+cli(void)
+{
+	__asm__ volatile("cli");
+}
+
 #endif /* !_MACHINE_CPUFUNC_H_ */

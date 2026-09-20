@@ -14,9 +14,9 @@
 #include <stdint.h>
 
 #include "include/machine/cpufunc.h"
+#include "include/machine/pit.h"
 #include "../sys/clock.h"
 
-#define PIT_HZ		1193182
 #define CAL_MS		50
 #define CAL_LATCH	((PIT_HZ * CAL_MS) / 1000)
 
