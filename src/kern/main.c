@@ -13,6 +13,7 @@
 #include "amd64/include/machine/multiboot.h"
 #include "amd64/include/machine/pic.h"
 #include "amd64/include/machine/pit.h"
+#include "amd64/include/machine/pmap.h"
 #include "amd64/include/machine/segments.h"
 #include "sys/clock.h"
 #include "sys/cons.h"
@@ -61,6 +62,7 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 		klog("boot", "cmdline: %s", (char *)(uintptr_t)mbi->cmdline);
 
 	pmm_bootstrap(mbi);
+	pmap_init();
 
 	klog(NULL, "main: inicializacao concluida");
 

@@ -56,6 +56,44 @@ rcr2(void)
 	return val;
 }
 
+/* controles gerais (cr0.pg liga paginacao) e o endereco do page directory */
+static __inline uint32_t
+rcr0(void)
+{
+	uint32_t val;
+
+	__asm__ volatile("mov %%cr0, %0" : "=r"(val));
+	return val;
+}
+
+static __inline void
+lcr0(uint32_t val)
+{
+	__asm__ volatile("mov %0, %%cr0" : : "r"(val) : "memory");
+}
+
+static __inline uint32_t
+rcr3(void)
+{
+	uint32_t val;
+
+	__asm__ volatile("mov %%cr3, %0" : "=r"(val));
+	return val;
+}
+
+static __inline void
+lcr3(uint32_t val)
+{
+	__asm__ volatile("mov %0, %%cr3" : : "r"(val) : "memory");
+}
+
+/* derruba uma entrada da tlb depois de mudar o mapeamento dela */
+static __inline void
+invlpg(uint32_t va)
+{
+	__asm__ volatile("invlpg (%0)" : : "r"(va) : "memory");
+}
+
 static __inline void
 sti(void)
 {
