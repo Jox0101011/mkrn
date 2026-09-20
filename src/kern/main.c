@@ -17,19 +17,54 @@
 #include "amd64/include/machine/segments.h"
 #include "sys/clock.h"
 #include "sys/cons.h"
+#include "sys/font.h"
+#include "sys/kmalloc.h"
 #include "sys/log.h"
+#include "sys/panic.h"
 #include "sys/pmm.h"
+#include "sys/thread.h"
 #include "sys/vmm.h"
 
 void tsc_calibrate(void);			/* amd64/tsc.c */
 void pmm_bootstrap(struct multiboot_info *mbi);	/* amd64/pmm_boot.c */
 
+/*
+ * threads de teste do escalonador: so imprimem a letra delas e cedem
+ * a vez, sem fim. resultado esperado no log: A B A B A B...
+ */
+static void
+thread_a(void)
+{
+	for (;;) {
+		klog(NULL, "A");
+		yield();
+	}
+}
+
+static void
+thread_b(void)
+{
+	for (;;) {
+		klog(NULL, "B");
+		yield();
+	}
+}
+
 void
 kmain(uint32_t magic, uint32_t mbi_phys)
 {
 	struct multiboot_info *mbi;
+	int font_ok;
 
 	vga_init();
+
+	/* usa a fonte o quanto antes: da pra rodar sem pmm/vmm/heap
+	   nem framebuffer de verdade nenhum, ja que o selftest desenha
+	   num buffer estatico proprio. o klog do resultado fica pra
+	   depois do tsc_calibrate() la embaixo (sem ele o timestamp
+	   sai lixo), mas o desenho em si roda aqui, o mais cedo que da */
+	font_ok = font_selftest();
+
 	gdt_init();
 	idt_init();
 	pic_init();
@@ -44,6 +79,10 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 	    IRQ_BASE, IRQ_BASE + NIRQ - 1);
 	klog("timer", "pit no canal 0 a %d hz (1 tick = %d ms), irq0 desmascarada",
 	    HZ, 1000 / HZ);
+
+	if (!font_ok)
+		panic("fonte 8x8: selftest falhou (nenhum pixel aceso)");
+	klog("font", "fonte 8x8 (cp437) carregada, renderer testado (256 glifos)");
 
 	if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
 		klog("boot", "magic multiboot invalido: 0x%x", magic);
@@ -90,9 +129,46 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 		}
 	}
 
+	kheap_init();
+
+	/* teste de fumaca do kmalloc/kfree: aloca uns blocos de
+	   tamanhos diferentes, escreve, libera o do meio e confere
+	   que a fusao com o vizinho da espaco pra uma alocacao maior */
+	{
+		char *a = kmalloc(64);
+		char *b = kmalloc(128);
+		char *c = kmalloc(32);
+
+		klog("kheap", "teste: kmalloc(64)=0x%x kmalloc(128)=0x%x kmalloc(32)=0x%x",
+		    (uint32_t)a, (uint32_t)b, (uint32_t)c);
+
+		if (a != NULL)
+			a[0] = 'A';
+		if (b != NULL)
+			b[0] = 'B';
+		if (c != NULL)
+			c[0] = 'C';
+
+		kfree(b);
+
+		char *d = kmalloc(100);
+		klog("kheap", "teste: depois de kfree(b), kmalloc(100)=0x%x", (uint32_t)d);
+
+		kfree(a);
+		kfree(c);
+		kfree(d);
+	}
+
 	klog(NULL, "main: inicializacao concluida");
 
+	sched_init();
+	thread_create(&kernel_task, thread_a);
+	thread_create(&kernel_task, thread_b);
+	klog("sched", "threads a e b criadas");
+
 	sti();		/* so agora comeca a receber a irq0 do timer */
+
+	scheduler_start();	/* nunca retorna - dali em diante e a e b se revezando */
 
 idle:
 	for (;;)
