@@ -65,4 +65,25 @@ struct multiboot_info {
 	uint8_t		framebuffer_color_info[6];
 };
 
+/* tipos de multiboot_mmap_entry.type */
+#define MULTIBOOT_MEMORY_AVAILABLE		1
+#define MULTIBOOT_MEMORY_RESERVED		2
+#define MULTIBOOT_MEMORY_ACPI_RECLAIMABLE	3
+#define MULTIBOOT_MEMORY_NVS			4
+#define MULTIBOOT_MEMORY_BADRAM		5
+
+/*
+ * uma entrada do memory map (mmap_addr, quando MULTIBOOT_INFO_MEM_MAP
+ * esta setado em flags). "size" e o tamanho do resto da entry (sem
+ * contar o proprio campo size) - e assim que anda pro proximo: soma
+ * size + sizeof(size), nao sizeof(struct), porque entries futuras
+ * podem vir maiores do que essa.
+ */
+struct multiboot_mmap_entry {
+	uint32_t	size;
+	uint64_t	addr;
+	uint64_t	len;
+	uint32_t	type;
+} __attribute__((packed));
+
 #endif /* !_MACHINE_MULTIBOOT_H_ */

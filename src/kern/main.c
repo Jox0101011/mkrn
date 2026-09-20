@@ -18,7 +18,8 @@
 #include "sys/cons.h"
 #include "sys/log.h"
 
-void tsc_calibrate(void);	/* amd64/tsc.c */
+void tsc_calibrate(void);			/* amd64/tsc.c */
+void pmm_bootstrap(struct multiboot_info *mbi);	/* amd64/pmm_boot.c */
 
 void
 kmain(uint32_t magic, uint32_t mbi_phys)
@@ -58,6 +59,8 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 
 	if ((mbi->flags & MULTIBOOT_INFO_CMDLINE) && mbi->cmdline != 0)
 		klog("boot", "cmdline: %s", (char *)(uintptr_t)mbi->cmdline);
+
+	pmm_bootstrap(mbi);
 
 	klog(NULL, "main: inicializacao concluida");
 
