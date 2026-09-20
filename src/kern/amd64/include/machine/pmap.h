@@ -18,6 +18,10 @@
 
 #include <stdint.h>
 
+/* onde o kernel "de verdade" (nao o trampolim de boot.S) roda -
+   precisa bater com o KERNBASE do kern.ld */
+#define KERNBASE	0xC0000000
+
 /* bits comuns a pde e pte */
 #define PTE_PRESENT	0x001
 #define PTE_RW		0x002	/* 0 = somente leitura, 1 = escrita liberada */

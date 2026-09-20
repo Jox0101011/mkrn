@@ -1,18 +1,20 @@
 /*
- * pmap.c - monta o page directory do kernel e liga a paginacao
+ * pmap.c - monta o page directory definitivo do kernel
+ *
+ * a paginacao ja foi ligada em amd64/boot.S, com uma tabela
+ * temporaria que so cobre os primeiros 4m (identity + higher half).
+ * aqui, com o pmm de pe, montamos a tabela de verdade cobrindo toda
+ * a ram conhecida e trocamos o cr3 - a troca e segura porque essa
+ * tabela nova tambem mapeia o proprio kernel no higher half, entao
+ * o codigo que esta executando agora (isso aqui) continua acessivel
+ * depois do lcr3().
  *
  * por enquanto so existe um espaco de enderecamento (nao tem
  * processos ainda), entao um unico page directory estatico serve.
- * pmap_init() mapeia identidade (va == pa) tudo que o pmm conhece -
- * inclui o kernel, o bitmap, a memoria de video (0xb8000) e ate as
- * paginas reservadas (nao custa nada mapear, e evita ter que tratar
- * buraco no meio do range). sem esse mapeamento, a proxima instrucao
- * depois de ligar cr0.pg da #pf na hora.
- *
- * como td o range que o pmm rastreia fica identity-mapeado, qualquer
- * pagina que pmm_alloc() devolver dali em diante (pra uma tabela
- * nova, por exemplo) ja vem acessivel no proprio endereco fisico -
- * nao tem problema de galinha e ovo.
+ * mantemos o mapa de identidade (va == pa) de tudo que o pmm
+ * conhece, alem do alias do kernel em kernbase+ - o identity map
+ * continua util pro kernel acessar qualquer pagina fisica pelo
+ * proprio endereco (mmio, bitmap do pmm, etc).
  */
 
 #include <stddef.h>
@@ -24,6 +26,9 @@
 #include "../sys/log.h"
 #include "../sys/panic.h"
 #include "../sys/pmm.h"
+
+extern char kernel_start[];	/* amd64/kern.ld, fisico */
+extern char kernel_end[];
 
 /* page directory do kernel - identity-mapeado, entao o proprio
    endereco fisico serve de ponteiro o tempo todo */
@@ -97,15 +102,27 @@ pmap_init(void)
 	pgdir = (uint32_t *)pd_phys;
 	memset(pgdir, 0, PAGE_SIZE);
 
+	/* identity map: da pro kernel acessar qualquer pagina fisica
+	   que o pmm conhece pelo proprio endereco (vga, mmio, etc) */
 	npages = pmm_npages();
 	for (i = 0; i < npages; i++) {
 		addr = (uint32_t)(i * PAGE_SIZE);
 		pmap_map(addr, addr, PTE_RW);
 	}
 
-	lcr3(pd_phys);
-	lcr0(rcr0() | 0x80000000);	/* cr0.pg */
+	/* alias do kernel no higher half - e daqui que o codigo que
+	   esta rodando agora (isso aqui, kmain, etc) continua sendo
+	   buscado depois do lcr3() abaixo */
+	for (addr = (uint32_t)kernel_start; addr < (uint32_t)kernel_end;
+	    addr += PAGE_SIZE)
+		pmap_map(KERNBASE + addr, addr, PTE_RW);
 
-	klog("pmap", "paginacao ligada: %lu paginas mapeadas 1:1, pd em 0x%x",
-	    npages, pd_phys);
+	/* troca a tabela temporaria (amd64/boot.S, so cobria 4m) pela
+	   definitiva - a paginacao ja estava ligada desde o boot, isso
+	   so troca qual tabela o cr3 aponta */
+	lcr3(pd_phys);
+
+	klog("pmap", "%lu paginas mapeadas 1:1, kernel tambem em 0x%x-0x%x, pd em 0x%x",
+	    npages, KERNBASE + (uint32_t)kernel_start,
+	    KERNBASE + (uint32_t)kernel_end, pd_phys);
 }
