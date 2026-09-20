@@ -10,6 +10,7 @@
 
 #include "amd64/include/machine/idt.h"
 #include "amd64/include/machine/multiboot.h"
+#include "amd64/include/machine/pic.h"
 #include "amd64/include/machine/segments.h"
 #include "sys/clock.h"
 #include "sys/cons.h"
@@ -25,12 +26,15 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 	vga_init();
 	gdt_init();
 	idt_init();
+	pic_init();
 	tsc_calibrate();
 
 	klog(NULL, "mkrn 0.1 (amd64/bios)");
 	klog("gdt", "%d descritores carregados (cs=0x%x ds=0x%x)",
 	    NGDT, GSEL_KCODE, GSEL_KDATA);
 	klog("idt", "%d vetores de excecao instalados (0-%d)", NEXC, NEXC - 1);
+	klog("pic", "8259 remapeado (irq0-15 -> vetor %d-%d), tudo mascarado",
+	    IRQ_BASE, IRQ_BASE + NIRQ - 1);
 
 	if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
 		klog("boot", "magic multiboot invalido: 0x%x", magic);

@@ -46,5 +46,6 @@ struct trapframe {
 
 void idt_init(void);
 void trap_handler(struct trapframe *tf);
+void isr_dispatch(struct trapframe *tf);	/* amd64/trap.c, chamado pelo stub asm */
 
 #endif /* !_MACHINE_IDT_H_ */

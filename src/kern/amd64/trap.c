@@ -13,6 +13,7 @@
 
 #include "include/machine/cpufunc.h"
 #include "include/machine/idt.h"
+#include "include/machine/pic.h"
 #include "../sys/log.h"
 #include "../sys/panic.h"
 
@@ -152,4 +153,18 @@ trap_handler(struct trapframe *tf)
 
 	panic("vetor %u (%s), err=0x%x eip=0x%x cs=0x%x eflags=0x%x",
 	    tf->vector, name, tf->err, tf->eip, tf->cs, tf->eflags);
+}
+
+/*
+ * isr_dispatch() e quem o stub de asm chama de verdade (idt_stubs.S):
+ * vetor abaixo de NEXC e excecao da cpu, dali pra cima e irq de
+ * hardware (pic remapeado, ver pic.h).
+ */
+void
+isr_dispatch(struct trapframe *tf)
+{
+	if (tf->vector < NEXC)
+		trap_handler(tf);
+	else
+		irq_dispatch(tf);
 }

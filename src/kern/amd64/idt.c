@@ -1,19 +1,21 @@
 /*
  * idt.c - monta a idt
  *
- * vetores 0-31 apontam pros stubs de amd64/idt_stubs.S. 32-255 ficam
- * sem handler (present=0) por enquanto - isso e coisa de pic/apic e
- * syscall, que ainda nao existem. o que fazer com cada excecao e
- * decidido em trap.c, esse arquivo so monta a tabela.
+ * vetores 0-31 (excecoes) e 32-47 (irqs de hardware, pic remapeado)
+ * apontam pros stubs de amd64/idt_stubs.S. 48-255 ficam sem handler
+ * (present=0) por enquanto - isso e coisa de apic/syscall. o que
+ * fazer com cada vetor e decidido em trap.c/irq.c, esse arquivo so
+ * monta a tabela.
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "include/machine/idt.h"
+#include "include/machine/pic.h"
 #include "include/machine/segments.h"
 
-extern uint32_t isr_stub_table[NEXC];	/* amd64/idt_stubs.S */
+extern uint32_t isr_stub_table[NEXC + NIRQ];	/* amd64/idt_stubs.S */
 
 static struct idt_entry idt[NIDT];
 static struct idt_ptr idtr;
@@ -33,7 +35,7 @@ idt_init(void)
 {
 	int i;
 
-	for (i = 0; i < NEXC; i++)
+	for (i = 0; i < NEXC + NIRQ; i++)
 		idt_set(i, isr_stub_table[i], GSEL_KCODE,
 		    IDT_A_PRESENT | IDT_A_RING(0) | IDT_T_INT32);
 
