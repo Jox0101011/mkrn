@@ -18,6 +18,8 @@
 #include "sys/clock.h"
 #include "sys/cons.h"
 #include "sys/log.h"
+#include "sys/pmm.h"
+#include "sys/vmm.h"
 
 void tsc_calibrate(void);			/* amd64/tsc.c */
 void pmm_bootstrap(struct multiboot_info *mbi);	/* amd64/pmm_boot.c */
@@ -63,6 +65,30 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 
 	pmm_bootstrap(mbi);
 	pmap_init();
+
+	/* teste de fumaca da api de vmm: mapeia uma pagina nova num
+	   endereco virtual que nao existe em mapeamento nenhum ainda,
+	   escreve, le de volta, desmapeia e confirma que sumiu */
+	{
+		uint32_t pa = pmm_alloc();
+		uint32_t va = 0xd0000000;
+
+		if (pa == PMM_ENOMEM) {
+			klog("vmm", "teste pulado: sem pagina livre");
+		} else {
+			vmm_map(va, pa, PAGE_PRESENT | PAGE_WRITE);
+			*(volatile uint32_t *)va = 0xcafef00d;
+
+			klog("vmm", "teste: va=0x%x -> pa=0x%x, escreveu/leu 0x%x",
+			    va, vmm_extract(va), *(volatile uint32_t *)va);
+
+			vmm_unmap(va);
+			klog("vmm", "teste: depois do unmap, vmm_extract=0x%x",
+			    vmm_extract(va));
+
+			pmm_free(pa);
+		}
+	}
 
 	klog(NULL, "main: inicializacao concluida");
 
