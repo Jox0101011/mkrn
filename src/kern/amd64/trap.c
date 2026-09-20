@@ -82,19 +82,46 @@ log_selector_err(const char *fac, uint32_t err)
 }
 
 /*
- * error code do #pf: bit0 presente/protecao, bit1 leitura/escrita,
- * bit2 kernel/usuario, bit4 busca de instrucao. cr2 tem o endereco
- * linear que faltou.
+ * handler de #pf (vetor 14) - as tres informacoes que interessam:
+ *
+ *   cr2   endereco linear que causou o fault
+ *   err   motivo + tipo de acesso (bits abaixo)
+ *   eip   instrucao que estava executando (aqui e eip, nao rip -
+ *         o kernel ainda roda em modo protegido de 32 bits, sem
+ *         paginacao de 64 bits/long mode; cr2 tambem e so os 32
+ *         bits baixos por isso, nao um valor de 64 bits completo)
+ *
+ * bits do error code (intel sdm vol.3 4.7):
+ *   bit 0 (P)     0 = pagina ausente, 1 = violacao de protecao
+ *   bit 1 (W/R)   0 = leitura, 1 = escrita
+ *   bit 2 (U/S)   0 = kernel, 1 = user mode
+ *   bit 3 (RSVD)  1 = bit reservado setado indevidamente numa pde/pte
+ *   bit 4 (I/D)   1 = fault veio de busca de instrucao
+ *
+ * hoje todo #pf e fatal - nao existe demand paging, stack que
+ * cresce nem copy-on-write ainda, entao nao ha o que fazer alem de
+ * logar direito e chamar panic(). o decode fica pronto pra quando
+ * essas coisas existirem (ex.: PF_PRESENT desligado + endereco
+ * dentro de uma vma valida = aloca e mapeia em vez de panicar).
  */
+#define PF_PRESENT	0x01
+#define PF_WRITE	0x02
+#define PF_USER		0x04
+#define PF_RSVD		0x08
+#define PF_INSTR	0x10
+
 static void
-log_pagefault(uint32_t err)
+pagefault_handler(struct trapframe *tf)
 {
-	klog("pf", "endereco=0x%x %s, %s, modo %s%s",
-	    rcr2(),
-	    (err & 0x01) ? "protecao violada" : "pagina ausente",
-	    (err & 0x02) ? "escrita" : "leitura",
-	    (err & 0x04) ? "usuario" : "kernel",
-	    (err & 0x10) ? ", busca de instrucao" : "");
+	uint32_t addr = rcr2();
+
+	klog("pf", "cr2=0x%x eip=0x%x err=0x%x", addr, tf->eip, tf->err);
+	klog("pf", "%s, %s, modo %s%s%s",
+	    (tf->err & PF_PRESENT) ? "protecao violada" : "pagina ausente",
+	    (tf->err & PF_WRITE) ? "escrita" : "leitura",
+	    (tf->err & PF_USER) ? "usuario" : "kernel",
+	    (tf->err & PF_INSTR) ? ", busca de instrucao" : "",
+	    (tf->err & PF_RSVD) ? ", bit reservado invalido numa pde/pte" : "");
 }
 
 /*
@@ -145,7 +172,7 @@ trap_handler(struct trapframe *tf)
 		log_selector_err(name, tf->err);
 		break;
 	case T_PF:
-		log_pagefault(tf->err);
+		pagefault_handler(tf);
 		break;
 	default:
 		break;
