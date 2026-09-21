@@ -6,8 +6,8 @@
  * klog_prefix() pra nao repetir a mesma coisa tres vezes.
  */
 
+#include "sys/types.h"
 #include <stdarg.h>
-#include <stddef.h>
 
 #include "sys/clock.h"
 #include "sys/cons.h"

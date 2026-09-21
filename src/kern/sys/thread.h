@@ -26,8 +26,8 @@
 #ifndef _SYS_THREAD_H_
 #define _SYS_THREAD_H_
 
-#include <stddef.h>
-#include <stdint.h>
+#include "types.h"
+
 
 struct context;		/* amd64/include/machine/context.h */
 

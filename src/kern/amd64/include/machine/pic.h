@@ -24,6 +24,7 @@ void pic_init(void);
 void pic_eoi(unsigned irq);
 void pic_mask(unsigned irq);
 void pic_unmask(unsigned irq);
+int pic_is_spurious(unsigned irq);
 
 void irq_install(unsigned irq, irq_handler_t handler);
 void irq_dispatch(struct trapframe *tf);

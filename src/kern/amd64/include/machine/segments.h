@@ -9,7 +9,8 @@
 #ifndef _MACHINE_SEGMENTS_H_
 #define _MACHINE_SEGMENTS_H_
 
-#include <stdint.h>
+#include "../../../sys/types.h"
+
 
 #define GSEL_NULL	0x00
 #define GSEL_KCODE	0x08

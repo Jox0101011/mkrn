@@ -10,15 +10,21 @@
  * md_uptime().
  */
 
-#include <stddef.h>
-#include <stdint.h>
 
+#include "../sys/types.h"
 #include "include/machine/cpufunc.h"
 #include "include/machine/pit.h"
+#include "include/machine/tsc.h"
 #include "../sys/clock.h"
+#include "../sys/panic.h"
 
 #define CAL_MS		50
 #define CAL_LATCH	((PIT_HZ * CAL_MS) / 1000)
+
+/* iteracoes de sobra pra uma maquina lenta de verdade rodar 50ms de
+   polling - se passar disso, o pit nao respondeu e algo esta errado
+   (sem pit? emulador estranho?), melhor falhar alto do que travar */
+#define CAL_TIMEOUT	10000000u
 
 static uint64_t tsc_hz;
 static uint64_t tsc_boot;
@@ -54,6 +60,7 @@ static uint64_t
 pit_calibrate_tsc(void)
 {
 	uint64_t t0, t1;
+	uint32_t timeout;
 
 	/* liga o gate do canal 2, desliga o speaker */
 	outb(0x61, (inb(0x61) & 0xfc) | 0x01);
@@ -64,8 +71,11 @@ pit_calibrate_tsc(void)
 	outb(0x42, (CAL_LATCH >> 8) & 0xff);
 
 	t0 = rdtsc();
-	while ((inb(0x61) & 0x20) == 0)	/* bit 5 = out do canal 2 */
-		continue;
+	timeout = CAL_TIMEOUT;
+	while ((inb(0x61) & 0x20) == 0) {	/* bit 5 = out do canal 2 */
+		if (--timeout == 0)
+			panic("tsc: calibracao via pit nao respondeu (sem pit?)");
+	}
 	t1 = rdtsc();
 
 	return (t1 - t0) * 1000 / CAL_MS;

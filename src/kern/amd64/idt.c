@@ -8,9 +8,8 @@
  * monta a tabela.
  */
 
-#include <stddef.h>
-#include <stdint.h>
 
+#include "../sys/types.h"
 #include "include/machine/idt.h"
 #include "include/machine/pic.h"
 #include "include/machine/segments.h"

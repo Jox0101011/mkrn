@@ -7,7 +7,8 @@
 #ifndef _MACHINE_MULTIBOOT_H_
 #define _MACHINE_MULTIBOOT_H_
 
-#include <stdint.h>
+#include "../../../sys/types.h"
+
 
 /* valor de eax quando o bootloader passa controle pro kernel */
 #define MULTIBOOT_BOOTLOADER_MAGIC	0x2badb002
@@ -85,5 +86,20 @@ struct multiboot_mmap_entry {
 	uint64_t	len;
 	uint32_t	type;
 } __attribute__((packed));
+
+/*
+ * uma entrada de modulo (mods_addr, quando MULTIBOOT_INFO_MODS esta
+ * setado). num microkernel, e assim que os servidores (drivers,
+ * filesystem, etc) chegam pro kernel: o grub carrega cada um como
+ * um modulo separado, e essa struct diz onde cada um foi parar.
+ */
+struct multiboot_mod_entry {
+	uint32_t	mod_start;
+	uint32_t	mod_end;
+	uint32_t	string;		/* cmdline do modulo */
+	uint32_t	reserved;
+} __attribute__((packed));
+
+void pmm_bootstrap(struct multiboot_info *mbi);	/* amd64/pmm_boot.c */
 
 #endif /* !_MACHINE_MULTIBOOT_H_ */

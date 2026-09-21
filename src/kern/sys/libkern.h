@@ -9,7 +9,8 @@
 #ifndef _SYS_LIBKERN_H_
 #define _SYS_LIBKERN_H_
 
-#include <stddef.h>
+#include "types.h"
+
 
 void	*memcpy(void *dst, const void *src, size_t len);
 void	*memmove(void *dst, const void *src, size_t len);

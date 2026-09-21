@@ -5,7 +5,8 @@
 #ifndef _MACHINE_CPUFUNC_H_
 #define _MACHINE_CPUFUNC_H_
 
-#include <stdint.h>
+#include "../../../sys/types.h"
+
 
 static __inline void
 outb(uint16_t port, uint8_t val)
@@ -104,6 +105,30 @@ static __inline void
 cli(void)
 {
 	__asm__ volatile("cli");
+}
+
+/*
+ * desliga interrupcoes e devolve o eflags de antes, pra restaurar
+ * depois com sti_restore() - diferente de um cli()/sti() as cegas,
+ * isso nao liga interrupcao que ja estava desligada (por exemplo,
+ * se quem chamou ja estava dentro de um isr). usado pra proteger
+ * secoes criticas curtas (heap, console) contra reentrancia por
+ * irq - ainda nao existe preempcao de thread, mas uma irq pode
+ * interromper o meio de um kmalloc()/klog() mesmo assim.
+ */
+static __inline uint32_t
+cli_save(void)
+{
+	uint32_t eflags;
+
+	__asm__ volatile("pushfl; popl %0; cli" : "=r"(eflags) :: "memory");
+	return eflags;
+}
+
+static __inline void
+sti_restore(uint32_t eflags)
+{
+	__asm__ volatile("pushl %0; popfl" : : "r"(eflags) : "memory", "cc");
 }
 
 #endif /* !_MACHINE_CPUFUNC_H_ */

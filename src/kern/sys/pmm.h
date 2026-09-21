@@ -15,7 +15,8 @@
 #ifndef _SYS_PMM_H_
 #define _SYS_PMM_H_
 
-#include <stdint.h>
+#include "types.h"
+
 
 #define PAGE_SIZE	4096
 #define PAGE_SHIFT	12

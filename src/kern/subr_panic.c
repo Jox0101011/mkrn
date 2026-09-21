@@ -13,9 +13,18 @@
 void
 panic(const char *fmt, ...)
 {
+	static int panicking = 0;
 	va_list ap;
 
 	__asm__ volatile("cli");
+
+	if (panicking) {
+		/* panic dentro de panic - nao arrisca chamar vklog() de
+		   novo (pode ser exatamente o que esta quebrado), so trava */
+		for (;;)
+			__asm__ volatile("hlt");
+	}
+	panicking = 1;
 
 	va_start(ap, fmt);
 	vklog("panic", fmt, ap);

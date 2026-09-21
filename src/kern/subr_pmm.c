@@ -14,9 +14,8 @@
  * mais e seguro, errar liberando de mais nao e.
  */
 
-#include <stddef.h>
-#include <stdint.h>
 
+#include "sys/types.h"
 #include "sys/libkern.h"
 #include "sys/pmm.h"
 

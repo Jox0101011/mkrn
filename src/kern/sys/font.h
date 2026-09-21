@@ -16,7 +16,8 @@
 #ifndef _SYS_FONT_H_
 #define _SYS_FONT_H_
 
-#include <stdint.h>
+#include "types.h"
+
 
 #define FONT_WIDTH	8
 #define FONT_HEIGHT	8

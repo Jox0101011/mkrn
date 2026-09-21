@@ -10,8 +10,8 @@
  * desmascara sozinho - fica explicito).
  */
 
-#include <stdint.h>
 
+#include "../sys/types.h"
 #include "include/machine/cpufunc.h"
 #include "include/machine/pic.h"
 
@@ -79,6 +79,12 @@ pic_unmask(unsigned irq)
 	uint8_t bit = 1 << (irq & 7);
 
 	outb(port, inb(port) & ~bit);
+
+	/* irq8-15 chegam na cpu pela cascata na irq2 do mestre - sem
+	   isso desmascarado tambem, nada da escrava chega, mesmo que a
+	   propria escrava ja tenha desmascarado a irq pedida */
+	if (irq >= 8)
+		outb(PIC1_DATA, inb(PIC1_DATA) & (uint8_t)~(1 << 2));
 }
 
 /* in-service register (ocw3): bit n ligado = irq n sendo atendida agora */
@@ -90,24 +96,33 @@ pic_read_isr(void)
 	return ((uint16_t)inb(PIC2_CMD) << 8) | inb(PIC1_CMD);
 }
 
+/*
+ * true se a irq 7/15 for espuria: a cpu foi acordada mas o isr nao
+ * confirma que a irq esta mesmo em atendimento (ruido eletrico na
+ * linha, tipico so dessas duas em hardware real). quem chama isso
+ * tem que checar ANTES de tratar a irq como se fosse de verdade -
+ * nao faz sentido rodar o handler registrado pra um evento que na
+ * pratica nao aconteceu.
+ */
+int
+pic_is_spurious(unsigned irq)
+{
+	if (irq == 7 && !(pic_read_isr() & 0x0080))
+		return 1;
+
+	if (irq == 15 && !(pic_read_isr() & 0x8000)) {
+		/* a escrava sinalizou a cascata mesmo sendo espuria nela -
+		   o mestre ainda espera o eoi dessa cascata */
+		outb(PIC1_CMD, PIC_EOI);
+		return 1;
+	}
+
+	return 0;
+}
+
 void
 pic_eoi(unsigned irq)
 {
-	/*
-	 * irq7/15 espuria: a cpu foi acordada mas o isr nao confirma
-	 * que a irq esta mesmo em atendimento (ruido eletrico na
-	 * linha, tipico de hardware real). nesse caso nao manda eoi
-	 * pro pic que "gerou" ela, senao intercala com uma irq de
-	 * verdade que vier em seguida - so cascateia o eoi da escrava
-	 * pro mestre quando for o caso.
-	 */
-	if (irq == 7 && !(pic_read_isr() & 0x0080))
-		return;
-	if (irq == 15 && !(pic_read_isr() & 0x8000)) {
-		outb(PIC1_CMD, PIC_EOI);
-		return;
-	}
-
 	if (irq >= 8)
 		outb(PIC2_CMD, PIC_EOI);
 	outb(PIC1_CMD, PIC_EOI);

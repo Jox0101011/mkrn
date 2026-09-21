@@ -7,8 +7,8 @@
  * trocar de ring.
  */
 
-#include <stdint.h>
 
+#include "../sys/types.h"
 #include "include/machine/segments.h"
 
 static struct gdt_entry gdt[NGDT];

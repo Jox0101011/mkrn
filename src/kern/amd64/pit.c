@@ -9,8 +9,8 @@
  * nada depois do init.
  */
 
-#include <stdint.h>
 
+#include "../sys/types.h"
 #include "include/machine/cpufunc.h"
 #include "include/machine/idt.h"
 #include "include/machine/pic.h"

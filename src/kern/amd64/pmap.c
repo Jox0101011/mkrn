@@ -3,23 +3,37 @@
  *
  * a paginacao ja foi ligada em amd64/boot.S, com uma tabela
  * temporaria que so cobre os primeiros 4m (identity + higher half).
- * aqui, com o pmm de pe, montamos a tabela de verdade cobrindo toda
- * a ram conhecida e trocamos o cr3 - a troca e segura porque essa
- * tabela nova tambem mapeia o proprio kernel no higher half, entao
- * o codigo que esta executando agora (isso aqui) continua acessivel
- * depois do lcr3().
+ * aqui, com o pmm de pe, montamos a tabela de verdade e trocamos o
+ * cr3 - a troca e segura porque essa tabela nova tambem mapeia o
+ * proprio kernel no higher half, entao o codigo que esta executando
+ * agora (isso aqui) continua acessivel depois do lcr3().
  *
- * por enquanto so existe um espaco de enderecamento (nao tem
- * processos ainda), entao um unico page directory estatico serve.
- * mantemos o mapa de identidade (va == pa) de tudo que o pmm
- * conhece, alem do alias do kernel em kernbase+ - o identity map
- * continua util pro kernel acessar qualquer pagina fisica pelo
- * proprio endereco (mmio, bitmap do pmm, etc).
+ * NAO mapeamos identidade de toda a ram (uma versao anterior fazia
+ * isso e tinha dois bugs de verdade por causa disso):
+ *
+ *   1. construir esse mapa gigante pede pagina de tabela nova via
+ *      pmm_alloc() centenas de vezes: cada pagina fisica devolvida e
+ *      escrita diretamente pelo proprio endereco (memset+pde/pte),
+ *      mas enquanto isso o cr3 AINDA e o temporario do boot.S, que
+ *      so cobre 4m! assim que o pmm_alloc() comeca a devolver pagina
+ *      alem de 4m (inevitavel com ram grande o suficiente), essa
+ *      escrita da #pf na hora.
+ *
+ *   2. identity map de toda a ram colide com o proprio higher half:
+ *      kernbase e 0xc0000000 (3g) - com mais de ~3g de ram, o
+ *      endereco fisico (por exemplo) 3.2g mapeado por identidade cai
+ *      EM CIMA do range de enderecos virtuais que o kernel/heap/etc
+ *      ja estao usando.
+ *
+ * a solucao: so mapeamos uma faixa baixa fixa (pequena, cabe o
+ * kernel + bitmap do pmm + vga em qualquer tamanho de ram) e o alias
+ * do kernel no higher half. quem precisar tocar uma pagina fisica
+ * especifica depois disso (mmio, por exemplo) usa vmm_map() na hora
+ * - a essa altura pmm/vmm ja estao de pe e cr3 ja e o definitivo,
+ * entao nao tem mais o problema do item 1.
  */
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include "../sys/types.h"
 #include "include/machine/cpufunc.h"
 #include "include/machine/pmap.h"
 #include "../sys/libkern.h"
@@ -27,11 +41,16 @@
 #include "../sys/panic.h"
 #include "../sys/pmm.h"
 
-extern char kernel_start[];	/* amd64/kern.ld, fisico */
+extern char kernel_start[];	/* amd64/kern.lds, fisico */
 extern char kernel_end[];
 
-/* page directory do kernel - identity-mapeado, entao o proprio
-   endereco fisico serve de ponteiro o tempo todo */
+/* 8m: kernel + bitmap do pmm (no maximo 128k, ram sempre cabe em 4g
+   sem pae) + vga (0xb8000) cabem folgado aqui, qualquer que seja o
+   tamanho de ram da maquina - ver o comentario grande acima */
+#define PMAP_LOW_END	0x800000u
+
+/* page directory do kernel - a faixa baixa fica identity-mapeada,
+   entao o proprio endereco fisico serve de ponteiro pra ele */
 static uint32_t *pgdir;
 
 static uint32_t *
@@ -50,7 +69,16 @@ pt_for(uint32_t pde_index, int create)
 		panic("pmap: sem pagina livre pra tabela nova");
 
 	memset((void *)pt_phys, 0, PAGE_SIZE);
-	pgdir[pde_index] = pt_phys | PTE_PRESENT | PTE_RW;
+
+	/*
+	 * a permissao efetiva de um acesso e a INTERSECAO do pde com o
+	 * pte - se o pde nao tiver PTE_USER, uma pte com PAGE_USER
+	 * simplesmente nao funciona, mesmo com o bit dela certo. entao
+	 * o pde sempre libera geral (present+rw+user) e quem restringe
+	 * de verdade e SEMPRE a pte individual (pmap_map() abaixo),
+	 * igual todo kernel de verdade faz.
+	 */
+	pgdir[pde_index] = pt_phys | PTE_PRESENT | PTE_RW | PTE_USER;
 
 	return (uint32_t *)pt_phys;
 }
@@ -92,8 +120,8 @@ pmap_extract(uint32_t va)
 void
 pmap_init(void)
 {
-	uint32_t pd_phys, addr;
-	unsigned long npages, i;
+	uint32_t pd_phys, addr, low_end;
+	uint64_t ram_bytes;
 
 	pd_phys = pmm_alloc();
 	if (pd_phys == PMM_ENOMEM)
@@ -102,13 +130,16 @@ pmap_init(void)
 	pgdir = (uint32_t *)pd_phys;
 	memset(pgdir, 0, PAGE_SIZE);
 
-	/* identity map: da pro kernel acessar qualquer pagina fisica
-	   que o pmm conhece pelo proprio endereco (vga, mmio, etc) */
-	npages = pmm_npages();
-	for (i = 0; i < npages; i++) {
-		addr = (uint32_t)(i * PAGE_SIZE);
+	/* nao passa do que a maquina realmente tem, pra maquinas com
+	   bem menos que 8m de ram */
+	ram_bytes = (uint64_t)pmm_npages() * PAGE_SIZE;
+	low_end = (ram_bytes < PMAP_LOW_END) ? (uint32_t)ram_bytes : PMAP_LOW_END;
+
+	/* identity map de uma faixa baixa fixa, comecando em PAGE_SIZE
+	   (nunca 0) - um desvio de ponteiro nulo continua dando #pf de
+	   verdade em vez de ler/escrever na pagina fisica 0 */
+	for (addr = PAGE_SIZE; addr < low_end; addr += PAGE_SIZE)
 		pmap_map(addr, addr, PTE_RW);
-	}
 
 	/* alias do kernel no higher half - e daqui que o codigo que
 	   esta rodando agora (isso aqui, kmain, etc) continua sendo
@@ -122,7 +153,7 @@ pmap_init(void)
 	   so troca qual tabela o cr3 aponta */
 	lcr3(pd_phys);
 
-	klog("pmap", "%lu paginas mapeadas 1:1, kernel tambem em 0x%x-0x%x, pd em 0x%x",
-	    npages, KERNBASE + (uint32_t)kernel_start,
-	    KERNBASE + (uint32_t)kernel_end, pd_phys);
+	klog("pmap", "baixa 0x%x-0x%x mapeada 1:1 (sem a pagina 0), kernel tambem em 0x%x-0x%x, pd em 0x%x",
+	    (uint32_t)PAGE_SIZE, low_end,
+	    KERNBASE + (uint32_t)kernel_start, KERNBASE + (uint32_t)kernel_end, pd_phys);
 }

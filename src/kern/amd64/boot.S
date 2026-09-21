@@ -9,8 +9,8 @@
  * tem mmu traduzindo nada ainda.
  *
  * como o resto do kernel e linkado pra rodar em kernbase+ (ver
- * kern.ld), _start e a montagem da tabela temporaria ficam numa
- * secao separada (.boot.text/.boot.bss) que o linker mantem no
+ * amd64/kern.lds e machine/kernbase.h), _start e a montagem da
+ * tabela temporaria ficam numa secao separada (.boot.text/.boot.bss) que o linker mantem no
  * endereco fisico, sem o deslocamento de kernbase - e o unico jeito
  * do processador conseguir buscar essas instrucoes antes da mmu
  * entrar em cena.
@@ -28,6 +28,8 @@
  */
 
 	.code32
+
+#include "include/machine/kernbase.h"
 
 /* cabecalho multiboot 1: precisa estar nos primeiros 8k do arquivo
    e alinhado em 4 bytes */
@@ -80,8 +82,8 @@ _start:
 	mov	$boot_pgdir, %edi
 	mov	%edx, (%edi)
 
-	/* pde 768 (0xc0000000 >> 22): higher half, mesma tabela */
-	mov	%edx, (768*4)(%edi)
+	/* pde de kernbase (kernbase>>22): higher half, mesma tabela */
+	mov	%edx, ((KERNBASE >> 22) * 4)(%edi)
 
 	/* de agora em diante nao pode mais tocar em eax (tem o magic
 	   do multiboot) nem em ebx (mbi_phys) - usa edx pro resto */

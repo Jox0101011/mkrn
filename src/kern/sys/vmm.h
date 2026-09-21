@@ -11,7 +11,8 @@
 #ifndef _SYS_VMM_H_
 #define _SYS_VMM_H_
 
-#include <stdint.h>
+#include "types.h"
+
 
 #define PAGE_PRESENT	0x01	/* pagina valida (mapear ja implica isso) */
 #define PAGE_WRITE	0x02	/* 0 = somente leitura, 1 = escrita liberada */

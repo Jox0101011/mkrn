@@ -9,22 +9,57 @@
  * pronta pra isso, so nao tem quem crie ainda.
  */
 
-#include <stddef.h>
-#include <stdint.h>
 
+#include "sys/types.h"
 #include "amd64/include/machine/context.h"
 #include "amd64/include/machine/cpufunc.h"
 #include "sys/kmalloc.h"
 #include "sys/log.h"
 #include "sys/panic.h"
+#include "sys/pmm.h"
 #include "sys/thread.h"
+#include "sys/vmm.h"
 
-#define THREAD_STACK_SIZE	4096
+#define THREAD_STACK_PAGES	1				/* 4096 bytes, como antes */
+#define THREAD_STACK_SIZE	(THREAD_STACK_PAGES * PAGE_SIZE)
+
+/* faixa de va dedicada pras stacks de thread - cada uma ganha uma
+   pagina de guarda (sem mapear) logo abaixo, de proposito: um
+   estouro de stack vira #pf na hora em vez de corromper em silencio
+   o que estiver do lado no heap (que e o que acontecia quando a
+   stack vinha de kmalloc()) */
+#define THREAD_VA_BASE		0xe0000000u
 
 struct task kernel_task;
 
 static struct thread *current;		/* thread rodando agora, ou NULL antes do 1o swtch */
 static struct thread *run_queue;	/* fila circular; entrada = proxima thread criada */
+static uint32_t next_thread_va = THREAD_VA_BASE;
+
+static uint8_t *
+thread_stack_alloc(void)
+{
+	uint32_t guard_va, stack_va;
+	unsigned i;
+
+	guard_va = next_thread_va;		/* fica sem mapear, de proposito */
+	stack_va = guard_va + PAGE_SIZE;
+
+	for (i = 0; i < THREAD_STACK_PAGES; i++) {
+		uint32_t pa = pmm_alloc();
+
+		if (pa == PMM_ENOMEM)
+			panic("thread_create: sem pagina fisica pra stack");
+		if (vmm_map(stack_va + i * PAGE_SIZE, pa, PAGE_PRESENT | PAGE_WRITE) != 0)
+			panic("thread_create: vmm_map falhou pra stack");
+	}
+
+	/* proxima thread comeca uma pagina depois do topo desta, pra
+	   sobrar uma guarda pra ELA tambem antes da stack dela */
+	next_thread_va = stack_va + THREAD_STACK_SIZE + PAGE_SIZE;
+
+	return (uint8_t *)stack_va;
+}
 
 static void
 thread_trampoline(void)
@@ -62,10 +97,7 @@ thread_create(struct task *task, void (*entry)(void))
 	if (t == NULL)
 		panic("thread_create: sem memoria pra struct thread");
 
-	t->stack = kmalloc(THREAD_STACK_SIZE);
-	if (t->stack == NULL)
-		panic("thread_create: sem memoria pra stack");
-
+	t->stack = thread_stack_alloc();
 	t->stack_size = THREAD_STACK_SIZE;
 	t->entry = entry;
 	t->state = THREAD_READY;

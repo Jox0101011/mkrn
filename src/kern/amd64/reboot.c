@@ -14,8 +14,8 @@
  * temos aqui.
  */
 
-#include <stdint.h>
 
+#include "../sys/types.h"
 #include "include/machine/cpufunc.h"
 #include "../sys/log.h"
 #include "../sys/reboot.h"

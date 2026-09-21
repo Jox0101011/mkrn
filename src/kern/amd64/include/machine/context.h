@@ -13,7 +13,8 @@
 #ifndef _MACHINE_CONTEXT_H_
 #define _MACHINE_CONTEXT_H_
 
-#include <stdint.h>
+#include "../../../sys/types.h"
+
 
 struct context {
 	uint32_t	edi;

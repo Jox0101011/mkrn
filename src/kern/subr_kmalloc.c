@@ -14,12 +14,19 @@
  * kmalloc() e first-fit: pega o primeiro bloco livre grande o
  * suficiente e divide em dois se sobrar espaco que valha a pena.
  * kfree() marca livre e funde com o vizinho seguinte e/ou anterior
- * se tambem estiverem livres, pra nao fragmentar a toa.
+ * se tambem estiverem livres, pra nao fragmentar a toa - e limpa o
+ * magic de quem foi absorvido, entao um double-free bate nesse
+ * magic zerado e vira panic() em vez de inflar um bloco com lixo ou
+ * criar ciclo na lista.
+ *
+ * ainda nao existe preempcao de thread, mas uma irq pode interromper
+ * o meio de um kmalloc()/kfree() mesmo assim (por exemplo, um
+ * handler que tambem aloca) - por isso a lista e mexida com
+ * interrupcoes desligadas.
  */
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include "sys/types.h"
+#include "amd64/include/machine/cpufunc.h"
 #include "sys/kmalloc.h"
 #include "sys/log.h"
 #include "sys/panic.h"
@@ -33,6 +40,8 @@
 #define HDR_MAGIC	0x6b6d616cu		/* "kmal", detecta corrupcao/mau uso */
 #define HEAP_ALIGN	16
 
+/* size ja foi conferido contra HEAP_SIZE antes de chegar aqui (ver
+   kmalloc()), entao essa soma nunca estoura de verdade */
 #define ALIGN_UP(x, a)	(((x) + (a) - 1) & ~((size_t)(a) - 1))
 
 struct kmalloc_hdr {
@@ -73,11 +82,21 @@ void *
 kmalloc(size_t size)
 {
 	struct kmalloc_hdr *b;
+	uint32_t flags;
 
 	if (size == 0)
 		return NULL;
 
+	/* maior que o heap inteiro (com header) nunca cabe - pega
+	   tambem qualquer coisa perto do limite de size_t, que faria
+	   o ALIGN_UP estourar e devolver um tamanho pequeno por engano
+	   (ex.: kmalloc(0xfffffff8) nao pode "dar certo" silenciosamente) */
+	if (size > HEAP_SIZE - sizeof(struct kmalloc_hdr))
+		return NULL;
+
 	size = ALIGN_UP(size, HEAP_ALIGN);
+
+	flags = cli_save();
 
 	for (b = heap_head; b != NULL; b = b->next) {
 		if (!b->free || b->size < size)
@@ -99,9 +118,11 @@ kmalloc(size_t size)
 		}
 
 		b->free = 0;
+		sti_restore(flags);
 		return (void *)(b + 1);
 	}
 
+	sti_restore(flags);
 	return NULL;	/* heap cheio - por enquanto nao cresce sozinho */
 }
 
@@ -109,6 +130,7 @@ void
 kfree(void *ptr)
 {
 	struct kmalloc_hdr *b, *p, *prev;
+	uint32_t flags;
 
 	if (ptr == NULL)
 		return;
@@ -119,12 +141,25 @@ kfree(void *ptr)
 		panic("kfree: ponteiro invalido ou heap corrompida (0x%x)",
 		    (uint32_t)ptr);
 
+	flags = cli_save();
+
+	if (b->free) {
+		sti_restore(flags);
+		panic("kfree: double free (0x%x)", (uint32_t)ptr);
+	}
+
 	b->free = 1;
 
-	/* funde com o proximo bloco, se tambem estiver livre */
+	/* funde com o proximo bloco, se tambem estiver livre - o
+	   absorvido perde o magic, entao um kfree() repetido nele (ou
+	   nesse ptr de novo) bate no "magic invalido" acima em vez de
+	   inflar b com um b->next que ja nao existe mais como bloco */
 	if (b->next != NULL && b->next->free) {
-		b->size += sizeof(struct kmalloc_hdr) + b->next->size;
-		b->next = b->next->next;
+		struct kmalloc_hdr *absorbed = b->next;
+
+		b->size += sizeof(struct kmalloc_hdr) + absorbed->size;
+		b->next = absorbed->next;
+		absorbed->magic = 0;
 	}
 
 	/* lista e simples (so "next"), entao pra fundir com o anterior
@@ -136,5 +171,8 @@ kfree(void *ptr)
 	if (prev != NULL && prev->free) {
 		prev->size += sizeof(struct kmalloc_hdr) + b->size;
 		prev->next = b->next;
+		b->magic = 0;
 	}
+
+	sti_restore(flags);
 }

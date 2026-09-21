@@ -19,7 +19,8 @@
 #ifndef _SYS_KMALLOC_H_
 #define _SYS_KMALLOC_H_
 
-#include <stddef.h>
+#include "types.h"
+
 
 void kheap_init(void);
 

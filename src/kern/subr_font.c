@@ -2,8 +2,8 @@
  * subr_font.c - renderer de texto em cima de um framebuffer generico
  */
 
-#include <stdint.h>
 
+#include "sys/types.h"
 #include "sys/font.h"
 #include "sys/font8x8.h"
 

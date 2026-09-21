@@ -11,8 +11,8 @@
  * por builtin por causa do -fno-builtin).
  */
 
-#include <stddef.h>
 
+#include "sys/types.h"
 #include "sys/libkern.h"
 
 void *

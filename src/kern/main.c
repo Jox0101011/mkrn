@@ -5,9 +5,8 @@
  * de 32 bits (estamos em modo protegido, nao em modo longo).
  */
 
-#include <stddef.h>
-#include <stdint.h>
 
+#include "sys/types.h"
 #include "amd64/include/machine/cpufunc.h"
 #include "amd64/include/machine/idt.h"
 #include "amd64/include/machine/multiboot.h"
@@ -15,6 +14,7 @@
 #include "amd64/include/machine/pit.h"
 #include "amd64/include/machine/pmap.h"
 #include "amd64/include/machine/segments.h"
+#include "amd64/include/machine/tsc.h"
 #include "sys/clock.h"
 #include "sys/cons.h"
 #include "sys/font.h"
@@ -24,9 +24,6 @@
 #include "sys/pmm.h"
 #include "sys/thread.h"
 #include "sys/vmm.h"
-
-void tsc_calibrate(void);			/* amd64/tsc.c */
-void pmm_bootstrap(struct multiboot_info *mbi);	/* amd64/pmm_boot.c */
 
 /*
  * threads de teste do escalonador: so imprimem a letra delas e cedem
@@ -82,7 +79,7 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 
 	if (!font_ok)
 		panic("fonte 8x8: selftest falhou (nenhum pixel aceso)");
-	klog("font", "fonte 8x8 (cp437) carregada, renderer testado (256 glifos)");
+	klog("font", "fonte 8x8 (cp437) carregada, renderer testado (glifo de exemplo)");
 
 	if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
 		klog("boot", "magic multiboot invalido: 0x%x", magic);

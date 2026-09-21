@@ -2,8 +2,8 @@
  * vga.c - console de texto vga (0xb8000), 80x25
  */
 
-#include <stdint.h>
 
+#include "../sys/types.h"
 #include "include/machine/cpufunc.h"
 #include "../sys/cons.h"
 

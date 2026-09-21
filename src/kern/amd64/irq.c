@@ -5,8 +5,8 @@
  * isso fica explicito por conta de quem chama (pic_unmask()).
  */
 
-#include <stddef.h>
 
+#include "../sys/types.h"
 #include "include/machine/idt.h"
 #include "include/machine/pic.h"
 #include "../sys/log.h"
@@ -24,6 +24,13 @@ void
 irq_dispatch(struct trapframe *tf)
 {
 	unsigned irq = tf->vector - IRQ_BASE;
+
+	/* checa espuria ANTES de tratar - nao faz sentido chamar o
+	   handler registrado pra um evento que na pratica nao aconteceu */
+	if (pic_is_spurious(irq)) {
+		klog("irq", "irq %u espuria, ignorada", irq);
+		return;
+	}
 
 	if (irq < NIRQ && irq_table[irq] != NULL)
 		irq_table[irq](tf);

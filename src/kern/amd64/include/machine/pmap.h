@@ -16,11 +16,8 @@
 #ifndef _MACHINE_PMAP_H_
 #define _MACHINE_PMAP_H_
 
-#include <stdint.h>
-
-/* onde o kernel "de verdade" (nao o trampolim de boot.S) roda -
-   precisa bater com o KERNBASE do kern.ld */
-#define KERNBASE	0xC0000000
+#include "../../../sys/types.h"
+#include "kernbase.h"		/* KERNBASE/KERNPHYS */
 
 /* bits comuns a pde e pte */
 #define PTE_PRESENT	0x001

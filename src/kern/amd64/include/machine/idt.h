@@ -5,7 +5,8 @@
 #ifndef _MACHINE_IDT_H_
 #define _MACHINE_IDT_H_
 
-#include <stdint.h>
+#include "../../../sys/types.h"
+
 
 #define NIDT		256	/* a idt tem ate 256 vetores */
 #define NEXC		32	/* vetores 0-31 sao excecoes da cpu */

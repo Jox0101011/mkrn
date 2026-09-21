@@ -6,15 +6,21 @@
  * pro klog(), nao tenta ser completo.
  */
 
+#include "sys/types.h"
 #include <stdarg.h>
-#include <stdint.h>
 
 #include "sys/cons.h"
 #include "sys/prf.h"
 
+#define KPUTNUM_BUFSZ	22	/* cabe um unsigned long em base 2 */
+#define WIDTH_MAX	(KPUTNUM_BUFSZ - 2)	/* deixa folga pros digitos de verdade */
+
 static void
 kputs(const char *s)
 {
+	if (s == NULL)
+		s = "(null)";
+
 	while (*s != '\0')
 		kputc(*s++);
 }
@@ -22,9 +28,12 @@ kputs(const char *s)
 static void
 kputnum(unsigned long num, unsigned base, int width, int zero)
 {
-	char buf[22];		/* cabe um unsigned long em base 2 */
+	char buf[KPUTNUM_BUFSZ];
 	static const char digits[] = "0123456789abcdef";
 	int i = 0;
+
+	if (width > WIDTH_MAX)
+		width = WIDTH_MAX;
 
 	do {
 		buf[i++] = digits[num % base];
@@ -51,17 +60,26 @@ kvprintf(const char *fmt, va_list ap)
 		}
 
 		fmt++;
+		if (*fmt == '\0')
+			break;		/* '%' no fim da string: nada pra formatar */
+
 		zero = (*fmt == '0');
 		if (zero)
 			fmt++;
 
 		width = 0;
-		while (*fmt >= '0' && *fmt <= '9')
-			width = width * 10 + (*fmt++ - '0');
+		while (*fmt >= '0' && *fmt <= '9') {
+			if (width < 1000)	/* evita overflow de int com formato absurdo */
+				width = width * 10 + (*fmt - '0');
+			fmt++;
+		}
 
 		longflag = (*fmt == 'l');
 		if (longflag)
 			fmt++;
+
+		if (*fmt == '\0')
+			break;		/* formato truncado (ex.: "%5"): nada pra formatar */
 
 		switch (*fmt) {
 		case 'd':
