@@ -4,6 +4,10 @@
  * klog/kwarn/kerror so diferem no rotulo antes do timestamp; toda a
  * montagem de "[ rotulo | timestamp ] facilidade: " passa por
  * klog_prefix() pra nao repetir a mesma coisa tres vezes.
+ *
+ * cada linha vai inteira entre cons_log(1)/cons_log(0): e o que
+ * pinta so as celulas de log (nao a tela toda) de preto sobre
+ * branco, pra diferenciar visualmente do resto (ver sys/cons.h).
  */
 
 #include "sys/types.h"
@@ -33,9 +37,11 @@ klog_prefix(const char *level, const char *fac)
 void
 vklog(const char *fac, const char *fmt, va_list ap)
 {
+	cons_log(1);
 	klog_prefix(NULL, fac);
 	kvprintf(fmt, ap);
 	kputc('\n');
+	cons_log(0);
 }
 
 void
@@ -53,6 +59,7 @@ kwarn(const char *fac, const char *fmt, ...)
 {
 	va_list ap;
 
+	cons_log(1);
 	klog_prefix("WARN", fac);
 
 	va_start(ap, fmt);
@@ -60,6 +67,7 @@ kwarn(const char *fac, const char *fmt, ...)
 	va_end(ap);
 
 	kputc('\n');
+	cons_log(0);
 }
 
 void
@@ -67,6 +75,7 @@ kerror(const char *fac, const char *fmt, ...)
 {
 	va_list ap;
 
+	cons_log(1);
 	klog_prefix("ERROR", fac);
 
 	va_start(ap, fmt);
@@ -74,4 +83,5 @@ kerror(const char *fac, const char *fmt, ...)
 	va_end(ap);
 
 	kputc('\n');
+	cons_log(0);
 }

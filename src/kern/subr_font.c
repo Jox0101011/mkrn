@@ -21,6 +21,7 @@ putpixel(struct fb *fb, uint32_t x, uint32_t y, uint32_t color)
 	case 8:
 		p[0] = (uint8_t)color;
 		break;
+	case 15:	/* mesmo layout de 2 bytes que 16bpp, so com 1 bit a menos usado */
 	case 16:
 		p[0] = (uint8_t)color;
 		p[1] = (uint8_t)(color >> 8);

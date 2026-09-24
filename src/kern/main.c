@@ -50,7 +50,10 @@ thread_b(void)
 void
 kmain(uint32_t magic, uint32_t mbi_phys)
 {
-	struct multiboot_info *mbi;
+	struct mb2_info *mbi;
+	struct mb2_tag_meminfo *mi;
+	struct mb2_tag_string *str;
+	struct mb2_tag_framebuffer *fbtag;
 	int font_ok;
 
 	vga_init();
@@ -81,26 +84,70 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 		panic("fonte 8x8: selftest falhou (nenhum pixel aceso)");
 	klog("font", "fonte 8x8 (cp437) carregada, renderer testado (glifo de exemplo)");
 
-	if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
+	if (magic != MB2_BOOTLOADER_MAGIC) {
 		klog("boot", "magic multiboot invalido: 0x%x", magic);
 		goto idle;
 	}
 
-	mbi = (struct multiboot_info *)(uintptr_t)mbi_phys;
+	mbi = (struct mb2_info *)(uintptr_t)mbi_phys;
 
-	if (mbi->flags & MULTIBOOT_INFO_MEMORY)
-		klog("boot", "memoria: %uK lower, %uK upper",
-		    mbi->mem_lower, mbi->mem_upper);
+	mi = (struct mb2_tag_meminfo *)mb2_find_tag(mbi, MB2_TAG_BASIC_MEMINFO);
+	if (mi != NULL)
+		klog("boot", "memoria: %uK lower, %uK upper", mi->mem_lower, mi->mem_upper);
 
-	if (mbi->flags & MULTIBOOT_INFO_BOOT_LOADER_NAME)
-		klog("boot", "bootloader: %s",
-		    (char *)(uintptr_t)mbi->boot_loader_name);
+	str = (struct mb2_tag_string *)mb2_find_tag(mbi, MB2_TAG_BOOT_LOADER_NAME);
+	if (str != NULL)
+		klog("boot", "bootloader: %s", str->string);
 
-	if ((mbi->flags & MULTIBOOT_INFO_CMDLINE) && mbi->cmdline != 0)
-		klog("boot", "cmdline: %s", (char *)(uintptr_t)mbi->cmdline);
+	str = (struct mb2_tag_string *)mb2_find_tag(mbi, MB2_TAG_CMDLINE);
+	if (str != NULL && str->string[0] != '\0')
+		klog("boot", "cmdline: %s", str->string);
 
 	pmm_bootstrap(mbi);
 	pmap_init();
+
+	/*
+	 * framebuffer linear: so depois do pmap_init() porque precisa
+	 * de vmm_map() de verdade (a tabela temporaria do boot.S so
+	 * cobre os primeiros 4m, e o endereco do framebuffer costuma
+	 * ficar bem mais alto - mmio de placa de video, nao ram). ate
+	 * aqui, e daqui pra tras se essa tag nao vier ou o bpp nao for
+	 * suportado, o console continua no vga de texto (vga_init() la
+	 * em cima) - e o fallback que foi pedido.
+	 */
+	fbtag = (struct mb2_tag_framebuffer *)mb2_find_tag(mbi, MB2_TAG_FRAMEBUFFER);
+	if (fbtag != NULL && fbtag->fb_type == MB2_FB_TYPE_RGB &&
+	    fbtag->addr <= 0xffffffffULL) {
+		struct cons_fb cfb;
+		uint32_t base, len, addr;
+
+		base = (uint32_t)fbtag->addr;
+		len = fbtag->pitch * fbtag->height;
+
+		for (addr = base & ~(PAGE_SIZE - 1); addr < base + len; addr += PAGE_SIZE)
+			vmm_map(addr, addr, PAGE_PRESENT | PAGE_WRITE);
+
+		cfb.addr = base;
+		cfb.pitch = fbtag->pitch;
+		cfb.width = fbtag->width;
+		cfb.height = fbtag->height;
+		cfb.bpp = fbtag->bpp;
+		cfb.red_pos = fbtag->red_pos;
+		cfb.red_size = fbtag->red_size;
+		cfb.green_pos = fbtag->green_pos;
+		cfb.green_size = fbtag->green_size;
+		cfb.blue_pos = fbtag->blue_pos;
+		cfb.blue_size = fbtag->blue_size;
+
+		if (cons_fb_init(&cfb))
+			klog("cons", "framebuffer linear %ux%u@%ubpp em 0x%x",
+			    cfb.width, cfb.height, cfb.bpp, cfb.addr);
+		else
+			klog("cons", "framebuffer linear com bpp %u, sem suporte - continua no vga",
+			    cfb.bpp);
+	} else {
+		klog("cons", "sem framebuffer linear rgb do multiboot2 - continua no vga");
+	}
 
 	/* teste de fumaca da api de vmm: mapeia uma pagina nova num
 	   endereco virtual que nao existe em mapeamento nenhum ainda,

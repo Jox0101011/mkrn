@@ -1,5 +1,5 @@
 /*
- * pmm_boot.c - traduz o memory map do multiboot pro pmm
+ * pmm_boot.c - traduz o memory map do multiboot2 pro pmm
  *
  * layout resultante na ram (a partir de 1m, onde o kernel carrega):
  *
@@ -7,7 +7,9 @@
  *                      reservado por inteiro de proposito, mesmo se
  *                      o mmap disser que parte esta disponivel)
  *   [kernel]        - .text/.rodata/.data/.bss, inclui a stack inicial
- *   [mbi/mmap/...]  - se o grub deixou isso logo depois do kernel
+ *   [mbi]           - o blob inteiro do multiboot2 (total_size cobre
+ *                      cabecalho + todas as tags, mmap/cmdline/nome
+ *                      inclusive - uma reserva so, ver reserve_boot_data())
  *   [bitmap]        - depois de tudo isso, tamanho = ram/4096/8
  *   [livre]         - o resto, controlado pelo bitmap
  *   [reservado]     - o que o firmware marcou como nao disponivel
@@ -15,19 +17,18 @@
  * duas passadas pelo mmap: a primeira so descobre ate onde vai a ram
  * disponivel, pra saber o tamanho do bitmap; so depois de pmm_init()
  * a segunda passada de fato libera as faixas disponiveis. por cima
- * disso, reservamos de volta kernel/bitmap/mbi/mmap/cmdline/modulos -
- * o bootloader nao tem como saber que essas areas estao ocupadas,
- * pra ele e ram disponivel comum.
+ * disso, reservamos de volta kernel/bitmap/mbi/modulos - o
+ * bootloader nao tem como saber que essas areas estao ocupadas, pra
+ * ele e ram disponivel comum.
  *
- * importante: o grub costuma colocar mbi, o array do mmap, as
- * strings de cmdline/nome do bootloader e a tabela de modulos logo
- * depois de onde o kernel foi carregado - exatamente onde a versao
- * antiga desse arquivo colocava o bitmap! o pmm_init() zera (com
- * 0xff) a regiao do bitmap assim que e chamado, entao se o bitmap
- * caisse em cima de algo disso, essa segunda leitura do mmap (pra
- * liberar as faixas disponiveis) ia ler lixo. por isso o bitmap so
- * e posicionado depois de boot_data_end(), que ja conta com tudo
- * isso - nao so kernel_end.
+ * importante: o grub costuma colocar o blob do mbi logo depois de
+ * onde o kernel foi carregado - exatamente onde a versao antiga
+ * desse arquivo colocava o bitmap! o pmm_init() zera (com 0xff) a
+ * regiao do bitmap assim que e chamado, entao se o bitmap caisse em
+ * cima do mbi, essa segunda leitura do mmap (pra liberar as faixas
+ * disponiveis) ia ler lixo. por isso o bitmap so e posicionado
+ * depois de boot_data_end(), que ja conta com isso - nao so
+ * kernel_end.
  *
  * page tables entram na lista de reservas quando o vmm mapear algo
  * fora do range baixo que o proprio pmap.c cobre; a stack inicial ja
@@ -59,140 +60,120 @@ align_up(uint32_t addr, uint32_t align)
  * verdade, no final de pmm_bootstrap().
  */
 static uint64_t
-mmap_max_available(struct multiboot_info *mbi)
+mmap_max_available(struct mb2_info *mbi)
 {
-	struct multiboot_mmap_entry *ent;
-	uint32_t off;
-	uint64_t max_addr, end;
+	struct mb2_tag_mmap *mmap;
+	struct mb2_tag_meminfo *mi;
+	struct mb2_mmap_entry *ent;
+	uint8_t *p, *end;
+	uint64_t max_addr, e;
 
-	if (!(mbi->flags & MULTIBOOT_INFO_MEM_MAP))
-		return 0x100000ULL + (uint64_t)mbi->mem_upper * 1024;
+	mmap = (struct mb2_tag_mmap *)mb2_find_tag(mbi, MB2_TAG_MMAP);
+	if (mmap == NULL) {
+		mi = (struct mb2_tag_meminfo *)mb2_find_tag(mbi, MB2_TAG_BASIC_MEMINFO);
+		return mi == NULL ? 0 : 0x100000ULL + (uint64_t)mi->mem_upper * 1024;
+	}
 
 	max_addr = 0;
-	for (off = 0; off < mbi->mmap_length; off += ent->size + sizeof(ent->size)) {
-		ent = (struct multiboot_mmap_entry *)(uintptr_t)(mbi->mmap_addr + off);
-		if (ent->type != MULTIBOOT_MEMORY_AVAILABLE)
+	end = (uint8_t *)mmap + mmap->size;
+	for (p = (uint8_t *)mmap->entries; p < end; p += mmap->entry_size) {
+		ent = (struct mb2_mmap_entry *)p;
+		if (ent->type != MB2_MEMORY_AVAILABLE)
 			continue;
 
-		end = ent->addr + ent->len;
-		if (end > 0x100000000ULL)	/* 32 bits sem pae: nao vai alem disso */
-			end = 0x100000000ULL;
-		if (end > max_addr)
-			max_addr = end;
+		e = ent->addr + ent->len;
+		if (e > 0x100000000ULL)	/* 32 bits sem pae: nao vai alem disso */
+			e = 0x100000000ULL;
+		if (e > max_addr)
+			max_addr = e;
 	}
 
 	return max_addr;
 }
 
-/* libera cada entrada MULTIBOOT_MEMORY_AVAILABLE do mmap */
+/* libera cada entrada MB2_MEMORY_AVAILABLE do mmap */
 static void
-mmap_free_available(struct multiboot_info *mbi)
+mmap_free_available(struct mb2_info *mbi)
 {
-	struct multiboot_mmap_entry *ent;
-	uint32_t off;
+	struct mb2_tag_mmap *mmap;
+	struct mb2_tag_meminfo *mi;
+	struct mb2_mmap_entry *ent;
+	uint8_t *p, *end;
 
-	if (!(mbi->flags & MULTIBOOT_INFO_MEM_MAP)) {
-		klog("pmm", "sem memory map multiboot, usando mem_lower/upper");
-		pmm_free_region(0, (uint64_t)mbi->mem_lower * 1024);
-		pmm_free_region(0x100000, (uint64_t)mbi->mem_upper * 1024);
+	mmap = (struct mb2_tag_mmap *)mb2_find_tag(mbi, MB2_TAG_MMAP);
+	if (mmap == NULL) {
+		mi = (struct mb2_tag_meminfo *)mb2_find_tag(mbi, MB2_TAG_BASIC_MEMINFO);
+		klog("pmm", "sem memory map multiboot2, usando mem_lower/upper");
+		if (mi != NULL) {
+			pmm_free_region(0, (uint64_t)mi->mem_lower * 1024);
+			pmm_free_region(0x100000, (uint64_t)mi->mem_upper * 1024);
+		}
 		return;
 	}
 
-	for (off = 0; off < mbi->mmap_length; off += ent->size + sizeof(ent->size)) {
-		ent = (struct multiboot_mmap_entry *)(uintptr_t)(mbi->mmap_addr + off);
-		if (ent->type == MULTIBOOT_MEMORY_AVAILABLE)
+	end = (uint8_t *)mmap + mmap->size;
+	for (p = (uint8_t *)mmap->entries; p < end; p += mmap->entry_size) {
+		ent = (struct mb2_mmap_entry *)p;
+		if (ent->type == MB2_MEMORY_AVAILABLE)
 			pmm_free_region(ent->addr, ent->len);
 	}
 }
 
 /*
  * maior endereco fisico tocado por qualquer coisa que o grub tenha
- * deixado pro kernel ler (a propria mbi, o array do mmap, as
- * strings, a tabela de modulos e os modulos em si). o bitmap so pode
- * comecar depois disso - ver o comentario grande no topo do arquivo.
+ * deixado pro kernel ler: o blob inteiro do mbi (total_size ja cobre
+ * cabecalho + tags, mmap/cmdline/nome do bootloader inclusive) mais
+ * os modulos em si (mod_start/mod_end apontam fora do blob). o
+ * bitmap so pode comecar depois disso - ver o comentario grande no
+ * topo do arquivo.
  */
 static uint32_t
-boot_data_end(struct multiboot_info *mbi)
+boot_data_end(struct mb2_info *mbi)
 {
 	uint32_t end = (uint32_t)kernel_end;
-	uint32_t v;
+	uint32_t v = (uint32_t)mbi + mbi->total_size;
+	struct mb2_tag *tag;
+	struct mb2_tag_module *mod;
 
-	v = (uint32_t)mbi + sizeof(*mbi);
 	if (v > end)
 		end = v;
 
-	if (mbi->flags & MULTIBOOT_INFO_MEM_MAP) {
-		v = mbi->mmap_addr + mbi->mmap_length;
-		if (v > end)
-			end = v;
-	}
-
-	if ((mbi->flags & MULTIBOOT_INFO_CMDLINE) && mbi->cmdline != 0) {
-		v = mbi->cmdline + (uint32_t)strlen((char *)(uintptr_t)mbi->cmdline) + 1;
-		if (v > end)
-			end = v;
-	}
-
-	if (mbi->flags & MULTIBOOT_INFO_BOOT_LOADER_NAME) {
-		v = mbi->boot_loader_name +
-		    (uint32_t)strlen((char *)(uintptr_t)mbi->boot_loader_name) + 1;
-		if (v > end)
-			end = v;
-	}
-
-	if (mbi->flags & MULTIBOOT_INFO_MODS) {
-		struct multiboot_mod_entry *mod =
-		    (struct multiboot_mod_entry *)(uintptr_t)mbi->mods_addr;
-		uint32_t i;
-
-		v = mbi->mods_addr + mbi->mods_count * sizeof(*mod);
-		if (v > end)
-			end = v;
-
-		for (i = 0; i < mbi->mods_count; i++)
-			if (mod[i].mod_end > end)
-				end = mod[i].mod_end;
+	for (tag = (struct mb2_tag *)(mbi + 1); tag->type != MB2_TAG_END;
+	    tag = (struct mb2_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7))) {
+		if (tag->type != MB2_TAG_MODULE)
+			continue;
+		mod = (struct mb2_tag_module *)tag;
+		if (mod->mod_end > end)
+			end = mod->mod_end;
 	}
 
 	return end;
 }
 
-/* reserva mbi, o array do mmap, as strings e cada modulo individual -
-   um microkernel carrega os servidores exatamente assim */
+/* reserva o blob inteiro do mbi (cobre mmap/cmdline/nome do
+   bootloader, tudo de uma vez) e cada modulo individual - um
+   microkernel carrega os servidores exatamente assim */
 static void
-reserve_boot_data(struct multiboot_info *mbi)
+reserve_boot_data(struct mb2_info *mbi)
 {
-	pmm_reserve((uint32_t)mbi, sizeof(*mbi));
+	struct mb2_tag *tag;
+	struct mb2_tag_module *mod;
+	unsigned i = 0;
 
-	if (mbi->flags & MULTIBOOT_INFO_MEM_MAP)
-		pmm_reserve(mbi->mmap_addr, mbi->mmap_length);
+	pmm_reserve((uint32_t)mbi, mbi->total_size);
 
-	if ((mbi->flags & MULTIBOOT_INFO_CMDLINE) && mbi->cmdline != 0)
-		pmm_reserve(mbi->cmdline,
-		    strlen((char *)(uintptr_t)mbi->cmdline) + 1);
-
-	if (mbi->flags & MULTIBOOT_INFO_BOOT_LOADER_NAME)
-		pmm_reserve(mbi->boot_loader_name,
-		    strlen((char *)(uintptr_t)mbi->boot_loader_name) + 1);
-
-	if (mbi->flags & MULTIBOOT_INFO_MODS) {
-		struct multiboot_mod_entry *mod =
-		    (struct multiboot_mod_entry *)(uintptr_t)mbi->mods_addr;
-		uint32_t i;
-
-		pmm_reserve(mbi->mods_addr, mbi->mods_count * sizeof(*mod));
-
-		for (i = 0; i < mbi->mods_count; i++) {
-			pmm_reserve(mod[i].mod_start,
-			    mod[i].mod_end - mod[i].mod_start);
-			klog("boot", "modulo %u: 0x%x-0x%x", i,
-			    mod[i].mod_start, mod[i].mod_end);
-		}
+	for (tag = (struct mb2_tag *)(mbi + 1); tag->type != MB2_TAG_END;
+	    tag = (struct mb2_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7))) {
+		if (tag->type != MB2_TAG_MODULE)
+			continue;
+		mod = (struct mb2_tag_module *)tag;
+		pmm_reserve(mod->mod_start, mod->mod_end - mod->mod_start);
+		klog("boot", "modulo %u: 0x%x-0x%x", i++, mod->mod_start, mod->mod_end);
 	}
 }
 
 void
-pmm_bootstrap(struct multiboot_info *mbi)
+pmm_bootstrap(struct mb2_info *mbi)
 {
 	uint64_t max_addr, total_pages64;
 	uint32_t bitmap_phys, bitmap_bytes, bitmap_pages;

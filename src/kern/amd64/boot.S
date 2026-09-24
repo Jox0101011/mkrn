@@ -1,12 +1,12 @@
 /*
- * boot.S - entry point multiboot, bootstrap de paginacao, salto pro
+ * boot.S - entry point multiboot2, bootstrap de paginacao, salto pro
  * higher half
  *
  * o grub carrega o kernel e pula pra _start em modo protegido de 32
- * bits, com eax = magic multiboot, ebx = ponteiro fisico pra struct
- * multiboot_info, e paginacao DESLIGADA. nesse momento o codigo
- * ainda precisa rodar em endereco fisico baixo (~1m), porque nao
- * tem mmu traduzindo nada ainda.
+ * bits, com eax = MB2_BOOTLOADER_MAGIC, ebx = ponteiro fisico pra
+ * struct mb2_info (machine/multiboot.h), e paginacao DESLIGADA.
+ * nesse momento o codigo ainda precisa rodar em endereco fisico
+ * baixo (~1m), porque nao tem mmu traduzindo nada ainda.
  *
  * como o resto do kernel e linkado pra rodar em kernbase+ (ver
  * amd64/kern.lds e machine/kernbase.h), _start e a montagem da
@@ -31,14 +31,36 @@
 
 #include "include/machine/kernbase.h"
 
-/* cabecalho multiboot 1: precisa estar nos primeiros 8k do arquivo
-   e alinhado em 4 bytes */
+/* cabecalho multiboot2: precisa estar nos primeiros 32k do arquivo
+   e alinhado em 8 bytes (ver mb2_find_tag() em machine/multiboot.h
+   pra como o kernel le as tags que o grub devolve em troca) */
 	.section .multiboot, "a"
-	.align 4
+	.align 8
 mb_header:
-	.long	0x1badb002			/* magic */
-	.long	0x00000003			/* flags: align + meminfo */
-	.long	-(0x1badb002 + 0x00000003)	/* checksum */
+	.long	0xe85250d6			/* magic */
+	.long	0				/* arquitetura: i386 */
+	.long	mb_header_end - mb_header	/* tamanho do cabecalho */
+	.long	-(0xe85250d6 + (mb_header_end - mb_header)) /* checksum */
+
+	/* pede framebuffer linear, 32bpp, sem preferencia de
+	   resolucao (o grub escolhe) - tag opcional: se o bootloader
+	   nao suportar video, ele so ignora essa tag e o kernel cai
+	   pro vga de texto sozinho (ver amd64/fb.c e amd64/cons.c) */
+	.align 8
+mb_fb_tag:
+	.word	5				/* MULTIBOOT_HEADER_TAG_FRAMEBUFFER */
+	.word	1				/* flags: opcional */
+	.long	mb_fb_tag_end - mb_fb_tag
+	.long	0				/* largura */
+	.long	0				/* altura */
+	.long	32				/* profundidade (bits por pixel) */
+mb_fb_tag_end:
+
+	.align 8
+	.word	0				/* tag final: tipo 0, tamanho 8 */
+	.word	0
+	.long	8
+mb_header_end:
 
 /* ---- daqui pra baixo: endereco fisico baixo, sem kernbase ---- */
 

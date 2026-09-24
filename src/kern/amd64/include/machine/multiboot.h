@@ -1,7 +1,13 @@
 /*
- * multiboot.h - estruturas da especificacao multiboot 1
+ * multiboot.h - estruturas da especificacao multiboot2
  *
- * ver https://www.gnu.org/software/grub/manual/multiboot/multiboot.html
+ * ver https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html
+ *
+ * diferente do multiboot1 (uma struct fixa com bitmap de flags), a
+ * info do boot loader aqui e uma sequencia de tags de tamanho
+ * variavel logo depois do cabecalho de 8 bytes (total_size+reserved)
+ * - cada tag comeca alinhada em 8 bytes, e termina com uma tag tipo
+ * MB2_TAG_END. mb2_find_tag() varre essa lista.
  */
 
 #ifndef _MACHINE_MULTIBOOT_H_
@@ -11,95 +17,106 @@
 
 
 /* valor de eax quando o bootloader passa controle pro kernel */
-#define MULTIBOOT_BOOTLOADER_MAGIC	0x2badb002
+#define MB2_BOOTLOADER_MAGIC	0x36d76289
 
-/* bits de multiboot_info.flags */
-#define MULTIBOOT_INFO_MEMORY		0x00000001
-#define MULTIBOOT_INFO_BOOTDEV		0x00000002
-#define MULTIBOOT_INFO_CMDLINE		0x00000004
-#define MULTIBOOT_INFO_MODS		0x00000008
-#define MULTIBOOT_INFO_MEM_MAP		0x00000040
-#define MULTIBOOT_INFO_BOOT_LOADER_NAME 0x00000200
+/* tipos de tag da info de boot (nao confundir com as tags do
+   cabecalho, que sao outro numero pros mesmos nomes) */
+#define MB2_TAG_END		0
+#define MB2_TAG_CMDLINE		1
+#define MB2_TAG_BOOT_LOADER_NAME 2
+#define MB2_TAG_MODULE		3
+#define MB2_TAG_BASIC_MEMINFO	4
+#define MB2_TAG_MMAP		6
+#define MB2_TAG_FRAMEBUFFER	8
 
-/* struct passada em ebx, sem necessidade de packed: no i386 os campos
-   de 8 bytes ja caem alinhados em 4 bytes, igual ao layout do spec */
-struct multiboot_info {
-	uint32_t	flags;
-
-	uint32_t	mem_lower;
-	uint32_t	mem_upper;
-
-	uint32_t	boot_device;
-
-	uint32_t	cmdline;
-
-	uint32_t	mods_count;
-	uint32_t	mods_addr;
-
-	uint32_t	syms[4];
-
-	uint32_t	mmap_length;
-	uint32_t	mmap_addr;
-
-	uint32_t	drives_length;
-	uint32_t	drives_addr;
-
-	uint32_t	config_table;
-
-	uint32_t	boot_loader_name;
-
-	uint32_t	apm_table;
-
-	uint32_t	vbe_control_info;
-	uint32_t	vbe_mode_info;
-	uint16_t	vbe_mode;
-	uint16_t	vbe_interface_seg;
-	uint16_t	vbe_interface_off;
-	uint16_t	vbe_interface_len;
-
-	uint64_t	framebuffer_addr;
-	uint32_t	framebuffer_pitch;
-	uint32_t	framebuffer_width;
-	uint32_t	framebuffer_height;
-	uint8_t		framebuffer_bpp;
-	uint8_t		framebuffer_type;
-	uint8_t		framebuffer_color_info[6];
+struct mb2_info {
+	uint32_t	total_size;	/* tudo, incluindo essa struct e a tag final */
+	uint32_t	reserved;
+	/* tags comecam aqui (mb2_info + 1), 8 bytes alinhado */
 };
 
-/* tipos de multiboot_mmap_entry.type */
-#define MULTIBOOT_MEMORY_AVAILABLE		1
-#define MULTIBOOT_MEMORY_RESERVED		2
-#define MULTIBOOT_MEMORY_ACPI_RECLAIMABLE	3
-#define MULTIBOOT_MEMORY_NVS			4
-#define MULTIBOOT_MEMORY_BADRAM		5
+struct mb2_tag {
+	uint32_t	type;
+	uint32_t	size;		/* inclui esse cabecalho, sem padding */
+};
 
-/*
- * uma entrada do memory map (mmap_addr, quando MULTIBOOT_INFO_MEM_MAP
- * esta setado em flags). "size" e o tamanho do resto da entry (sem
- * contar o proprio campo size) - e assim que anda pro proximo: soma
- * size + sizeof(size), nao sizeof(struct), porque entries futuras
- * podem vir maiores do que essa.
- */
-struct multiboot_mmap_entry {
-	uint32_t	size;
+struct mb2_tag_string {
+	uint32_t	type, size;
+	char		string[];
+};
+
+struct mb2_tag_module {
+	uint32_t	type, size;
+	uint32_t	mod_start;
+	uint32_t	mod_end;
+	char		cmdline[];
+};
+
+struct mb2_tag_meminfo {
+	uint32_t	type, size;
+	uint32_t	mem_lower;	/* em kb */
+	uint32_t	mem_upper;
+};
+
+/* tipos de mb2_mmap_entry.type */
+#define MB2_MEMORY_AVAILABLE		1
+#define MB2_MEMORY_RESERVED		2
+#define MB2_MEMORY_ACPI_RECLAIMABLE	3
+#define MB2_MEMORY_NVS			4
+#define MB2_MEMORY_BADRAM		5
+
+struct mb2_mmap_entry {
 	uint64_t	addr;
 	uint64_t	len;
 	uint32_t	type;
-} __attribute__((packed));
-
-/*
- * uma entrada de modulo (mods_addr, quando MULTIBOOT_INFO_MODS esta
- * setado). num microkernel, e assim que os servidores (drivers,
- * filesystem, etc) chegam pro kernel: o grub carrega cada um como
- * um modulo separado, e essa struct diz onde cada um foi parar.
- */
-struct multiboot_mod_entry {
-	uint32_t	mod_start;
-	uint32_t	mod_end;
-	uint32_t	string;		/* cmdline do modulo */
 	uint32_t	reserved;
 } __attribute__((packed));
 
-void pmm_bootstrap(struct multiboot_info *mbi);	/* amd64/pmm_boot.c */
+struct mb2_tag_mmap {
+	uint32_t	type, size;
+	uint32_t	entry_size;	/* pode crescer no futuro - anda por isso, nao por sizeof(entry) */
+	uint32_t	entry_version;
+	struct mb2_mmap_entry entries[];
+};
+
+/* framebuffer_type: 0 = paleta indexada, 1 = rgb direto, 2 = texto ega.
+   so suportamos rgb direto (amd64/fb.c) - os outros dois caem pro
+   vga de texto, como se a tag nem tivesse vindo */
+#define MB2_FB_TYPE_INDEXED	0
+#define MB2_FB_TYPE_RGB		1
+#define MB2_FB_TYPE_EGA_TEXT	2
+
+struct mb2_tag_framebuffer {
+	uint32_t	type, size;
+	uint64_t	addr;
+	uint32_t	pitch;
+	uint32_t	width, height;
+	uint8_t		bpp;
+	uint8_t		fb_type;
+	uint8_t		reserved[2];
+	/* validos so quando fb_type == MB2_FB_TYPE_RGB; pra indexado
+	   viria uma paleta aqui, e pra texto ega nao vem nada */
+	uint8_t		red_pos, red_size;
+	uint8_t		green_pos, green_size;
+	uint8_t		blue_pos, blue_size;
+} __attribute__((packed));
+
+/* acha a primeira tag do tipo pedido, ou NULL se o bootloader nao
+   mandou - varredura linear simples, a lista de tags e pequena (uma
+   duzia no maximo) e isso so roda uma vez no boot */
+static __inline struct mb2_tag *
+mb2_find_tag(struct mb2_info *mbi, uint32_t type)
+{
+	struct mb2_tag *tag;
+
+	for (tag = (struct mb2_tag *)(mbi + 1); tag->type != MB2_TAG_END;
+	    tag = (struct mb2_tag *)((uint8_t *)tag + ((tag->size + 7) & ~7)))
+		if (tag->type == type)
+			return tag;
+
+	return NULL;
+}
+
+void pmm_bootstrap(struct mb2_info *mbi);	/* amd64/pmm_boot.c */
 
 #endif /* !_MACHINE_MULTIBOOT_H_ */

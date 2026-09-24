@@ -26,9 +26,9 @@ LDFLAGS=	-m elf_i386 -nostdlib -T amd64/kern.ld
 
 MISRCS=		main.c subr_log.c subr_prf.c subr_panic.c subr_libkern.c subr_pmm.c \
 		subr_vmm.c subr_kmalloc.c subr_font.c subr_thread.c
-MDCSRCS=	amd64/vga.c amd64/tsc.c amd64/gdt.c amd64/idt.c amd64/trap.c \
-		amd64/pic.c amd64/irq.c amd64/pit.c amd64/reboot.c amd64/pmm_boot.c \
-		amd64/pmap.c
+MDCSRCS=	amd64/vga.c amd64/fb.c amd64/cons.c amd64/tsc.c amd64/gdt.c amd64/idt.c \
+		amd64/trap.c amd64/pic.c amd64/irq.c amd64/pit.c amd64/reboot.c \
+		amd64/pmm_boot.c amd64/pmap.c
 MDSSRCS=	amd64/boot.S amd64/gdt_flush.S amd64/idt_stubs.S amd64/switch.S
 
 OBJS=		${MISRCS:.c=.o} ${MDCSRCS:.c=.o} ${MDSSRCS:.S=.o}
