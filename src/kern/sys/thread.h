@@ -16,11 +16,12 @@
  * machine/context.h), uma stack propria, e um estado de
  * escalonamento.
  *
- * o escalonador e cooperativo, round-robin, numa fila circular:
- * yield() e a unica forma de trocar de thread agora. preempcao de
- * verdade (o timer interrompendo quem nao chamou yield) fica pra
- * depois - amd64/pit.c ja tem o gancho comentado esperando por
- * isso.
+ * o escalonador e round-robin numa fila circular, trocado por
+ * yield() (cooperativo, quem chama decide a hora) ou por
+ * scheduler_tick() (preemptivo, chamado pelo hardclock() do timer
+ * em amd64/pit.c - cada irq0 e uma fatia de tempo). os dois caem no
+ * mesmo swtch(); pra quem esta sendo trocado nao tem diferenca
+ * nenhuma entre os dois motivos.
  */
 
 #ifndef _SYS_THREAD_H_
@@ -64,5 +65,6 @@ void scheduler_start(void);		/* nunca retorna */
 
 struct thread *thread_create(struct task *task, void (*entry)(void));
 void yield(void);
+void scheduler_tick(void);	/* chamado pelo hardclock() a cada irq0 - amd64/pit.c */
 
 #endif /* !_SYS_THREAD_H_ */

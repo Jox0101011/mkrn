@@ -32,10 +32,19 @@ irq_dispatch(struct trapframe *tf)
 		return;
 	}
 
+	/*
+	 * eoi ANTES do handler, nao depois: o handler do timer chama
+	 * scheduler_tick(), que pode trocar de thread ali dentro - se
+	 * isso acontecer, essa chamada so "volta" (e chega no eoi)
+	 * quando essa mesma thread for escalonada de novo, que pode
+	 * ser bem mais tarde. o pic ficaria com essa irq marcada como
+	 * "em atendimento" o tempo todo, travando novos ticks - o
+	 * timer nunca mais preemptaria ninguem.
+	 */
+	pic_eoi(irq);
+
 	if (irq < NIRQ && irq_table[irq] != NULL)
 		irq_table[irq](tf);
 	else
 		klog("irq", "irq %u sem handler instalado", irq);
-
-	pic_eoi(irq);
 }

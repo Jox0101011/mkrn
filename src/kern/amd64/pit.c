@@ -1,7 +1,11 @@
 /*
  * pit.c - canal 0 do pit como relogio periodico (irq0)
  *
- *   irq0 -> hardclock() -> ticks++ -> [scheduler_tick(), mais pra frente]
+ *   irq0 -> hardclock() -> ticks++ -> scheduler_tick() (sys/thread.h)
+ *
+ * scheduler_tick() e o que torna o escalonador preemptivo: cada
+ * disparo do pit e uma fatia de tempo, a thread rodando nao escolhe
+ * quando solta a cpu (diferente de um yield() cooperativo).
  *
  * modo 3 (square wave generator): o canal conta o divisor pra baixo
  * a partir do cristal (PIT_HZ) e dispara a irq0 de novo toda vez que
@@ -16,6 +20,7 @@
 #include "include/machine/pic.h"
 #include "include/machine/pit.h"
 #include "../sys/clock.h"
+#include "../sys/thread.h"
 
 #define PIT_CH0		0x40
 #define PIT_CMD		0x43
@@ -31,7 +36,7 @@ hardclock(struct trapframe *tf)
 {
 	(void)tf;
 	ticks++;
-	/* scheduler_tick() entra aqui quando tiver preempcao */
+	scheduler_tick();	/* uma fatia de tempo por irq0 - ver subr_thread.c */
 }
 
 void

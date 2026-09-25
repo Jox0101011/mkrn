@@ -1,5 +1,6 @@
 /*
- * subr_thread.c - threads de kernel e escalonador cooperativo
+ * subr_thread.c - threads de kernel e escalonador (round-robin,
+ * cooperativo por yield() ou preemptivo por scheduler_tick())
  *
  * ainda so existe uma task (a do kernel - todas as threads
  * compartilham o mesmo address space, e por isso que sao "threads
@@ -83,7 +84,7 @@ sched_init(void)
 	current = NULL;
 	run_queue = NULL;
 
-	klog("sched", "escalonador cooperativo pronto (task do kernel, pgdir=0x%x)",
+	klog("sched", "escalonador round-robin pronto (task do kernel, pgdir=0x%x)",
 	    kernel_task.pgdir_phys);
 }
 
@@ -108,13 +109,16 @@ thread_create(struct task *task, void (*entry)(void))
 	 * por um swtch() e esta prestes a dar ret pro trampolim - ver
 	 * o comentario em amd64/switch.S. os callee-saved iniciais
 	 * (edi/esi/ebx/ebp) nunca sao lidos de verdade nessa primeira
-	 * vez, entao zero serve.
+	 * vez, entao zero serve - eflags e o unico que importa de
+	 * verdade: e o popf que liga interrupcao a primeira vez que
+	 * a thread roda.
 	 */
 	ctx = (struct context *)(t->stack + THREAD_STACK_SIZE - sizeof(struct context));
 	ctx->edi = 0;
 	ctx->esi = 0;
 	ctx->ebx = 0;
 	ctx->ebp = 0;
+	ctx->eflags = 0x202;	/* IF ligado (bit9) + bit1, sempre 1 em eflags */
 	ctx->eip = (uint32_t)thread_trampoline;
 	t->context = ctx;
 
@@ -147,6 +151,21 @@ yield(void)
 	current->state = THREAD_RUNNING;
 
 	swtch(&prev->context, current->context);
+}
+
+/*
+ * mesma troca do yield(), chamada de dentro do hardclock() (irq0,
+ * amd64/pit.c) em vez de por uma thread pedindo de proposito - dai
+ * "preemptivo": quem estava rodando nao tem escolha. o swtch() em
+ * si nao liga pra quem chamou; a unica diferenca de verdade e o
+ * estado da cpu no momento (dentro de uma interrupt gate, IF ja
+ * desligado pela cpu) - e exatamente pra isso que existe o
+ * pushf/popf de eflags (ver machine/context.h).
+ */
+void
+scheduler_tick(void)
+{
+	yield();
 }
 
 void

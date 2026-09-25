@@ -112,9 +112,10 @@ cli(void)
  * depois com sti_restore() - diferente de um cli()/sti() as cegas,
  * isso nao liga interrupcao que ja estava desligada (por exemplo,
  * se quem chamou ja estava dentro de um isr). usado pra proteger
- * secoes criticas curtas (heap, console) contra reentrancia por
- * irq - ainda nao existe preempcao de thread, mas uma irq pode
- * interromper o meio de um kmalloc()/klog() mesmo assim.
+ * secoes criticas curtas (heap, console) contra o timer preemptando
+ * no meio (subr_thread.c: scheduler_tick()) e trocando pra outra
+ * thread que mexe na mesma coisa - sem isso duas threads podem
+ * cair dentro do kmalloc()/klog() "ao mesmo tempo".
  */
 static __inline uint32_t
 cli_save(void)
