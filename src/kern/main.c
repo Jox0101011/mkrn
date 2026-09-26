@@ -72,8 +72,8 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 	pit_init(HZ);
 
 	klog(NULL, "mkrn 0.1 (amd64/bios)");
-	klog("gdt", "%d descritores carregados (cs=0x%x ds=0x%x)",
-	    NGDT, GSEL_KCODE, GSEL_KDATA);
+	klog("gdt", "%d descritores carregados (cs=0x%x ds=0x%x tss=0x%x)",
+	    NGDT, GSEL_KCODE, GSEL_KDATA, GSEL_TSS);
 	klog("idt", "%d vetores de excecao instalados (0-%d)", NEXC, NEXC - 1);
 	klog("pic", "8259 remapeado (irq0-15 -> vetor %d-%d), tudo mascarado",
 	    IRQ_BASE, IRQ_BASE + NIRQ - 1);

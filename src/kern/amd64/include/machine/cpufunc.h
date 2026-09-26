@@ -107,6 +107,14 @@ cli(void)
 	__asm__ volatile("cli");
 }
 
+/* carrega o task register - so isso, o descritor de tss ja precisa
+   estar na gdt carregada (ver amd64/gdt.c) */
+static __inline void
+ltr(uint16_t sel)
+{
+	__asm__ volatile("ltr %0" : : "r"(sel));
+}
+
 /*
  * desliga interrupcoes e devolve o eflags de antes, pra restaurar
  * depois com sti_restore() - diferente de um cli()/sti() as cegas,

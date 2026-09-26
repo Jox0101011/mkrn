@@ -2,8 +2,6 @@
  * segments.h - gdt: selectors e formato dos descritores
  *
  * layout: null, kernel code, kernel data, user code, user data, tss.
- * o descritor de tss fica reservado (zerado) ate ter uma struct tss
- * de verdade pra apontar - isso e coisa de uma proxima etapa.
  */
 
 #ifndef _MACHINE_SEGMENTS_H_
@@ -50,6 +48,39 @@ struct gdt_ptr {
 /* nibble alto de limit_hi_flags (bit7 g, bit6 d/b, bit5 l, bit4 avl) */
 #define GDT_F_GRAN_4K	0x80
 #define GDT_F_SZ_32	0x40
+
+/* tipo (bits0-3 do access) de um descritor de sistema com
+   GDT_A_SEGMENT=0 - so usamos esse, tss disponivel de 32 bits */
+#define GDT_A_TSS32	0x09
+
+/*
+ * task state segment (32 bits) - layout fixo da intel, so ss0/esp0
+ * importam de verdade aqui: nao usamos troca de task por hardware
+ * (ver o comentario grande em amd64/gdt.c), so precisamos que ss0:esp0
+ * estejam certos pra quando uma interrupcao pegar a cpu em ring3 e
+ * subir sozinha pra ring0 - o resto dos campos so existe porque o
+ * formato e fixo, fica tudo zerado.
+ */
+struct tss {
+	uint32_t	prev_task;
+	uint32_t	esp0;
+	uint32_t	ss0;
+	uint32_t	esp1;
+	uint32_t	ss1;
+	uint32_t	esp2;
+	uint32_t	ss2;
+	uint32_t	cr3;
+	uint32_t	eip;
+	uint32_t	eflags;
+	uint32_t	eax, ecx, edx, ebx;
+	uint32_t	esp, ebp, esi, edi;
+	uint32_t	es, cs, ss, ds, fs, gs;
+	uint32_t	ldt;
+	uint16_t	trap;
+	uint16_t	iomap_base;
+} __attribute__((packed));
+
+void tss_set_kstack(uint32_t esp0);	/* amd64/gdt.c - chamado a cada troca de thread */
 
 void gdt_init(void);
 

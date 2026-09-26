@@ -14,6 +14,7 @@
 #include "sys/types.h"
 #include "amd64/include/machine/context.h"
 #include "amd64/include/machine/cpufunc.h"
+#include "amd64/include/machine/segments.h"
 #include "sys/kmalloc.h"
 #include "sys/log.h"
 #include "sys/panic.h"
@@ -138,6 +139,19 @@ thread_create(struct task *task, void (*entry)(void))
 	return t;
 }
 
+/*
+ * tudo que precisa acontecer quando "current" passa a ser outra
+ * thread - hoje so isso, mas e o mesmo lugar onde um cr3 por-task
+ * entraria no dia que tiver address space separada por task.
+ */
+static void
+switch_to(struct thread *t)
+{
+	t->state = THREAD_RUNNING;
+	current = t;
+	tss_set_kstack((uint32_t)(t->stack + t->stack_size));
+}
+
 void
 yield(void)
 {
@@ -147,8 +161,7 @@ yield(void)
 		return;		/* nenhuma ou so uma thread - nada pra trocar */
 
 	prev->state = THREAD_READY;
-	current = prev->next;
-	current->state = THREAD_RUNNING;
+	switch_to(prev->next);
 
 	swtch(&prev->context, current->context);
 }
@@ -176,8 +189,7 @@ scheduler_start(void)
 	if (run_queue == NULL)
 		panic("scheduler_start: nenhuma thread criada");
 
-	current = run_queue;
-	current->state = THREAD_RUNNING;
+	switch_to(run_queue);
 
 	/* primeira troca: nao tem thread "anterior" de verdade pra
 	   salvar, entao o contexto salvo em unused e descartado */
