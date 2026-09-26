@@ -2,12 +2,14 @@
  * subr_thread.c - threads de kernel e escalonador (round-robin,
  * cooperativo por yield() ou preemptivo por scheduler_tick())
  *
- * ainda so existe uma task (a do kernel - todas as threads
- * compartilham o mesmo address space, e por isso que sao "threads
- * de kernel" e nao processos de verdade). uma task com processo
- * proprio, address space separada, viria de um pgdir_phys diferente
- * e apareceria na lista global de tasks - a estrutura ja esta
- * pronta pra isso, so nao tem quem crie ainda.
+ * so existe pgdir compartilhado por enquanto (task_create() usa o
+ * cr3 atual, o mesmo do kernel_task) - uma task com address space de
+ * verdade separado viria de um pgdir_phys diferente, e o que
+ * continua faltando pra isso e clonar/montar essa tabela nova, nao a
+ * struct em si. o que ja isola thread de usuario de memoria de
+ * kernel HOJE e o bit PAGE_USER por pagina (amd64/pmap.c): as
+ * paginas de kernel nunca tem esse bit, entao ring3 nao enxerga nada
+ * do kernel mesmo dividindo o mesmo pgdir.
  */
 
 
@@ -21,6 +23,8 @@
 #include "sys/pmm.h"
 #include "sys/thread.h"
 #include "sys/vmm.h"
+
+extern void user_enter(uint32_t eip, uint32_t esp);	/* amd64/user_enter.S - nunca retorna */
 
 #define THREAD_STACK_PAGES	1				/* 4096 bytes, como antes */
 #define THREAD_STACK_SIZE	(THREAD_STACK_PAGES * PAGE_SIZE)
@@ -66,6 +70,9 @@ thread_stack_alloc(void)
 static void
 thread_trampoline(void)
 {
+	if (current->user_entry != 0)
+		user_enter(current->user_entry, current->user_stack);	/* nunca volta daqui */
+
 	current->entry();
 
 	/* as threads de hoje sao for(;;) sem fim - se voltou, e bug
@@ -89,41 +96,43 @@ sched_init(void)
 	    kernel_task.pgdir_phys);
 }
 
-struct thread *
-thread_create(struct task *task, void (*entry)(void))
+struct task *
+task_create(void)
 {
-	struct thread *t;
-	struct context *ctx;
+	struct task *t = kmalloc(sizeof(*t));
 
-	t = kmalloc(sizeof(*t));
 	if (t == NULL)
-		panic("thread_create: sem memoria pra struct thread");
+		panic("task_create: sem memoria pra struct task");
+
+	t->pgdir_phys = rcr3();	/* mesmo address space de todo mundo - ver o comentario do topo */
+	t->captbl = NULL;
+	t->ipc = NULL;
+	t->threads = NULL;
+	t->next = NULL;
+
+	return t;
+}
+
+/* tudo que thread_create() e thread_create_user() tem em comum:
+   aloca a struct, a stack de KERNEL (toda thread tem uma, ver o
+   comentario grande em sys/thread.h) e entra nas duas listas
+   (fila de escalonamento + threads da task) */
+static struct thread *
+thread_new(struct task *task)
+{
+	struct thread *t = kmalloc(sizeof(*t));
+
+	if (t == NULL)
+		panic("thread_new: sem memoria pra struct thread");
 
 	t->stack = thread_stack_alloc();
 	t->stack_size = THREAD_STACK_SIZE;
-	t->entry = entry;
+	t->entry = NULL;
+	t->user_entry = 0;
+	t->user_stack = 0;
 	t->state = THREAD_READY;
 	t->task = task;
 
-	/*
-	 * monta o topo da stack pra parecer que a thread ja passou
-	 * por um swtch() e esta prestes a dar ret pro trampolim - ver
-	 * o comentario em amd64/switch.S. os callee-saved iniciais
-	 * (edi/esi/ebx/ebp) nunca sao lidos de verdade nessa primeira
-	 * vez, entao zero serve - eflags e o unico que importa de
-	 * verdade: e o popf que liga interrupcao a primeira vez que
-	 * a thread roda.
-	 */
-	ctx = (struct context *)(t->stack + THREAD_STACK_SIZE - sizeof(struct context));
-	ctx->edi = 0;
-	ctx->esi = 0;
-	ctx->ebx = 0;
-	ctx->ebp = 0;
-	ctx->eflags = 0x202;	/* IF ligado (bit9) + bit1, sempre 1 em eflags */
-	ctx->eip = (uint32_t)thread_trampoline;
-	t->context = ctx;
-
-	/* fila circular de escalonamento */
 	if (run_queue == NULL) {
 		t->next = t;
 		run_queue = t;
@@ -132,9 +141,63 @@ thread_create(struct task *task, void (*entry)(void))
 		run_queue->next = t;
 	}
 
-	/* lista de threads da task dona */
 	t->task_next = task->threads;
 	task->threads = t;
+
+	return t;
+}
+
+/*
+ * monta o topo da stack pra parecer que a thread ja passou por um
+ * swtch() e esta prestes a dar ret pro trampolim - ver o comentario
+ * em amd64/switch.S. os callee-saved iniciais (edi/esi/ebx/ebp)
+ * nunca sao lidos de verdade nessa primeira vez, entao zero serve -
+ * eflags e o unico que importa de verdade: e o popf que liga
+ * interrupcao a primeira vez que a thread roda.
+ */
+static void
+thread_init_context(struct thread *t)
+{
+	struct context *ctx;
+
+	ctx = (struct context *)(t->stack + THREAD_STACK_SIZE - sizeof(struct context));
+	ctx->edi = 0;
+	ctx->esi = 0;
+	ctx->ebx = 0;
+	ctx->ebp = 0;
+	ctx->eflags = 0x202;
+	ctx->eip = (uint32_t)thread_trampoline;
+	t->context = ctx;
+}
+
+struct thread *
+thread_create(struct task *task, void (*entry)(void))
+{
+	struct thread *t = thread_new(task);
+
+	t->entry = entry;
+	thread_init_context(t);
+
+	return t;
+}
+
+/*
+ * entry_va/ustack_va sao endereços de RING3 - quem chama ja precisa
+ * ter mapeado essas paginas com PAGE_USER antes (vmm_map(), ver o
+ * exemplo em main.c). a stack de kernel (t->stack) e separada dessa
+ * e sempre existe: e nela que a thread comeca a rodar (ainda em
+ * ring0, dentro do trampolim) antes do user_enter() saltar pra
+ * ring3, e e ela que o tss aponta pra quando essa thread voltar pro
+ * kernel por interrupcao.
+ */
+struct thread *
+thread_create_user(struct task *task, uint32_t entry_va, uint32_t ustack_va)
+{
+	struct thread *t = thread_new(task);
+
+	t->user_entry = entry_va;
+	t->user_stack = ustack_va;
+	thread_init_context(t);
 
 	return t;
 }

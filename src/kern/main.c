@@ -19,6 +19,7 @@
 #include "sys/cons.h"
 #include "sys/font.h"
 #include "sys/kmalloc.h"
+#include "sys/libkern.h"
 #include "sys/log.h"
 #include "sys/panic.h"
 #include "sys/pmm.h"
@@ -46,6 +47,18 @@ thread_b(void)
 		yield();
 	}
 }
+
+/*
+ * primeiro programa de usuario (teste): so um "for (;;) {}" - como
+ * ainda nao tem loader de elf, e o codigo de maquina escrito a mao
+ * mesmo (jmp pra si mesmo = EB FE). o kernel escreve esses bytes
+ * direto na pagina de usuario: pode, porque o bit PAGE_USER da pte
+ * so restringe ring3, ring0 sempre enxerga tudo (ver amd64/pmap.c).
+ */
+static const uint8_t user_main_code[] = { 0xeb, 0xfe };	/* 1: jmp 1b */
+
+#define USER_CODE_VA	0x40000000u
+#define USER_STACK_VA	0x40001000u	/* 1 pagina; a thread entra com esp no topo dela */
 
 void
 kmain(uint32_t magic, uint32_t mbi_phys)
@@ -209,6 +222,38 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 	thread_create(&kernel_task, thread_a);
 	thread_create(&kernel_task, thread_b);
 	klog("sched", "threads a e b criadas");
+
+	/*
+	 * primeira task de usuario (teste): uma pagina de codigo (o
+	 * loop acima) e uma de stack, as duas com PAGE_USER - e so
+	 * isso que diferencia elas de qualquer pagina de kernel, e
+	 * nenhuma outra pagina do sistema tem esse bit. um acesso de
+	 * ring3 fora dessas duas paginas da #pf na hora (protecao=1,
+	 * modo=usuario no log de amd64/trap.c:pagefault_handler()) -
+	 * e assim que "usuario nao acessa memoria de kernel" e
+	 * garantido aqui, sem precisar de pgdir separado ainda.
+	 */
+	{
+		uint32_t code_pa = pmm_alloc();
+		uint32_t stack_pa = pmm_alloc();
+
+		if (code_pa == PMM_ENOMEM || stack_pa == PMM_ENOMEM) {
+			klog("user", "sem pagina livre pra primeira task de usuario, pulando");
+		} else {
+			struct task *utask;
+
+			vmm_map(USER_CODE_VA, code_pa, PAGE_PRESENT | PAGE_USER);
+			memcpy((void *)USER_CODE_VA, user_main_code, sizeof(user_main_code));
+
+			vmm_map(USER_STACK_VA, stack_pa, PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+
+			utask = task_create();
+			thread_create_user(utask, USER_CODE_VA, USER_STACK_VA + PAGE_SIZE);
+
+			klog("user", "task de usuario criada: eip=0x%x esp=0x%x",
+			    USER_CODE_VA, USER_STACK_VA + PAGE_SIZE);
+		}
+	}
 
 	sti();		/* so agora comeca a receber a irq0 do timer */
 
