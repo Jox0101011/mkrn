@@ -17,6 +17,7 @@
 #include "amd64/include/machine/context.h"
 #include "amd64/include/machine/cpufunc.h"
 #include "amd64/include/machine/segments.h"
+#include "sys/cap.h"
 #include "sys/kmalloc.h"
 #include "sys/log.h"
 #include "sys/panic.h"
@@ -84,7 +85,9 @@ void
 sched_init(void)
 {
 	kernel_task.pgdir_phys = rcr3();
-	kernel_task.captbl = NULL;
+	kernel_task.captbl = captbl_create();
+	if (kernel_task.captbl == NULL)
+		panic("sched_init: sem memoria pra captbl do kernel_task");
 	kernel_task.ipc = NULL;
 	kernel_task.threads = NULL;
 	kernel_task.next = NULL;
@@ -105,7 +108,9 @@ task_create(void)
 		panic("task_create: sem memoria pra struct task");
 
 	t->pgdir_phys = rcr3();	/* mesmo address space de todo mundo - ver o comentario do topo */
-	t->captbl = NULL;
+	t->captbl = captbl_create();
+	if (t->captbl == NULL)
+		panic("task_create: sem memoria pra captbl");
 	t->ipc = NULL;
 	t->threads = NULL;
 	t->next = NULL;

@@ -3,7 +3,7 @@
  *
  *   task
  *    ├── address space   (pgdir_phys - por enquanto so a do kernel)
- *    ├── capability table (captbl - ainda nao existe, NULL)
+ *    ├── capability table (captbl - sys/cap.h; toda task ganha uma vazia ao ser criada)
  *    ├── ipc space        (ipc - ainda nao existe, NULL)
  *    └── threads
  *          ├── thread A
@@ -42,6 +42,7 @@
 
 
 struct context;		/* amd64/include/machine/context.h */
+struct captbl;		/* sys/cap.h */
 
 enum thread_state {
 	THREAD_READY,
@@ -65,7 +66,7 @@ struct thread {
 
 struct task {
 	uint32_t		pgdir_phys;	/* cr3 do address space desta task */
-	void			*captbl;	/* tabela de capabilities - reservado */
+	struct captbl		*captbl;	/* handles desta task - nunca ponteiro de kernel cru pra fora (sys/cap.h) */
 	void			*ipc;		/* ipc space - reservado */
 	struct thread		*threads;
 	struct task		*next;

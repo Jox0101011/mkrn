@@ -25,7 +25,7 @@ CFLAGS=		-m32 -std=c99 -ffreestanding -fno-pie -fno-stack-protector \
 LDFLAGS=	-m elf_i386 -nostdlib -T amd64/kern.ld
 
 MISRCS=		main.c subr_log.c subr_prf.c subr_panic.c subr_libkern.c subr_pmm.c \
-		subr_vmm.c subr_kmalloc.c subr_font.c subr_thread.c
+		subr_vmm.c subr_kmalloc.c subr_font.c subr_thread.c subr_cap.c
 MDCSRCS=	amd64/vga.c amd64/fb.c amd64/cons.c amd64/tsc.c amd64/gdt.c amd64/idt.c \
 		amd64/trap.c amd64/pic.c amd64/irq.c amd64/pit.c amd64/reboot.c \
 		amd64/pmm_boot.c amd64/pmap.c

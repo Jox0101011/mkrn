@@ -15,6 +15,7 @@
 #include "amd64/include/machine/pmap.h"
 #include "amd64/include/machine/segments.h"
 #include "amd64/include/machine/tsc.h"
+#include "sys/cap.h"
 #include "sys/clock.h"
 #include "sys/cons.h"
 #include "sys/font.h"
@@ -253,6 +254,49 @@ kmain(uint32_t magic, uint32_t mbi_phys)
 			klog("user", "task de usuario criada: eip=0x%x esp=0x%x",
 			    USER_CODE_VA, USER_STACK_VA + PAGE_SIZE);
 		}
+	}
+
+	/*
+	 * teste de fumaca da captbl do kernel_task: insere umas caps
+	 * de kinds diferentes (so CAP_TASK tem objeto de verdade por
+	 * tras hoje - o resto e so pra exercitar a tabela em si, ver
+	 * o comentario grande em sys/cap.h), confere que lookup com o
+	 * kind errado falha (e assim que "nao expor ponteiro de
+	 * kernel direto" vira de verdade: um handle so abre a porta
+	 * pro kind certo (kind errado da NULL mesmo com o handle
+	 * existindo), delete+reinsert recicla o slot com epoch novo,
+	 * e um bando de inserts a mais confirma que a tabela cresce
+	 * sozinha quando enche.
+	 */
+	{
+		uint32_t h_ep, h_vmo, h_task, h_bad, i, last = CAP_INVALID;
+		struct capslot *s;
+
+		h_ep = cap_insert(kernel_task.captbl, CAP_ENDPOINT, 0, NULL);
+		h_vmo = cap_insert(kernel_task.captbl, CAP_VMO, 0, NULL);
+		h_task = cap_insert(kernel_task.captbl, CAP_TASK, 0, &kernel_task);
+
+		klog("cap", "insert: endpoint=%u vmo=%u task=%u", h_ep, h_vmo, h_task);
+
+		s = cap_lookup(kernel_task.captbl, h_task, CAP_TASK);
+		klog("cap", "lookup(%u, CAP_TASK) = %s (obj=0x%x)",
+		    h_task, (s != NULL) ? "ok" : "falhou", (s != NULL) ? (uint32_t)s->obj : 0);
+
+		/* mesmo handle, kind errado de proposito - tem que falhar */
+		s = cap_lookup(kernel_task.captbl, h_task, CAP_ENDPOINT);
+		klog("cap", "lookup(%u, CAP_ENDPOINT) = %s (esperado: falhar)",
+		    h_task, (s != NULL) ? "ok" : "falhou");
+
+		cap_delete(kernel_task.captbl, h_vmo);
+		h_bad = cap_insert(kernel_task.captbl, CAP_NOTIFICATION, 0, NULL);
+		s = cap_lookup(kernel_task.captbl, h_bad, CAP_NOTIFICATION);
+		klog("cap", "vmo=%u deletado, slot reciclado como notification=%u (epoch=%u)",
+		    h_vmo, h_bad, (s != NULL) ? s->epoch : 0);
+
+		/* mais caps que CAPTBL_INITIAL - tem que crescer sozinha */
+		for (i = 0; i < 32; i++)
+			last = cap_insert(kernel_task.captbl, CAP_IRQ, 0, NULL);
+		klog("cap", "mais 32 inserts (irq): ultimo handle=%u - tabela cresceu sozinha", last);
 	}
 
 	sti();		/* so agora comeca a receber a irq0 do timer */
